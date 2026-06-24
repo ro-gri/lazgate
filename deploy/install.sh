@@ -185,6 +185,10 @@ Commands:
 EOF
 
 if [ "${LAZ_NO_CONFIRM:-0}" != "1" ] && [ -t 0 ]; then
-  printf '%s' "Press Enter after saving the admin token and secret key..."
-  read -r _
+  printf '%s' "Type ok after saving the admin token and secret key: "
+  read -r confirmation
+  if [ "$confirmation" != "ok" ]; then
+    echo "Confirmation was not received. Save the values above before closing this terminal."
+    exit 1
+  fi
 fi

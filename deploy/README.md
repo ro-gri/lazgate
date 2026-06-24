@@ -101,8 +101,8 @@ data.
 
 ## Non-interactive mode
 
-By default, the installer waits for Enter at the end so the generated admin
-token and secret key are not missed.
+By default, the installer waits for the user to type `ok` at the end so the
+generated admin token and secret key are not missed.
 
 For automation:
 
