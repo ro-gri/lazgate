@@ -99,6 +99,18 @@ curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/install.
 Do not rotate `LAZ_SECRET_KEY` unless you know how to migrate existing encrypted
 data.
 
+## Non-interactive mode
+
+By default, the installer waits for Enter at the end so the generated admin
+token and secret key are not missed.
+
+For automation:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/install.sh \
+  | sudo env LAZ_NO_CONFIRM=1 bash
+```
+
 ## Operations
 
 ```sh

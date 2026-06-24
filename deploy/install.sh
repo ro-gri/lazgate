@@ -183,3 +183,8 @@ Commands:
   cd ${INSTALL_DIR} && docker compose pull && docker compose up -d
 
 EOF
+
+if [ "${LAZ_NO_CONFIRM:-0}" != "1" ] && [ -t 0 ]; then
+  printf '%s' "Press Enter after saving the admin token and secret key..."
+  read -r _
+fi
