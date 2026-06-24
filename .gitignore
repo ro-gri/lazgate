@@ -1,0 +1,19 @@
+data/
+tmp/
+*.tmp
+
+# Local caches and build artifacts
+.gocache/
+build/
+dist/
+
+# IDE/editor state
+.idea/
+.vscode/
+
+# Local backups and secrets
+backups/
+.env
+.env.*
+*.key
+*.pem

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>__APP_NAME__ login</title>
+    <link rel="stylesheet" href="__WEB_PREFIX__/assets/styles.css">
+  </head>
+  <body data-web-prefix="__WEB_PREFIX__" class="login-page">
+    <main class="login-shell">
+      <form id="login-form" class="login-box">
+        <h1>__APP_NAME__</h1>
+        <label>
+          Admin token
+          <input id="admin-token" type="password" autocomplete="current-password" autofocus required>
+        </label>
+        <button type="submit" class="primary">Войти</button>
+      </form>
+    </main>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="__WEB_PREFIX__/assets/ui.js" defer></script>
+    <script src="__WEB_PREFIX__/assets/login.js" defer></script>
+  </body>
+</html>
