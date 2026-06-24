@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	commontokens "laz/internal/common/tokens"
 	"laz/internal/model"
+	commontokens "laz/internal/security/tokens"
 	"laz/internal/services/connections"
 	"laz/internal/storage"
 

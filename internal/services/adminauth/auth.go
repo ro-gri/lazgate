@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	commontokens "laz/internal/common/tokens"
 	"laz/internal/model"
+	commontokens "laz/internal/security/tokens"
 )
 
 type Role string

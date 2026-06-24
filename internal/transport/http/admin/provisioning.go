@@ -4,10 +4,10 @@ import (
 	"net/http"
 	"strings"
 
-	"laz/internal/common/httpx"
 	"laz/internal/model"
 	auditsvc "laz/internal/services/audit"
 	adminview "laz/internal/transport/http/admin/view"
+	"laz/internal/transport/http/httpx"
 )
 
 func (a *App) setAccessRemoteStatus(w http.ResponseWriter, r *http.Request, connectionID string, localStatus model.Status, remoteStatus string) {

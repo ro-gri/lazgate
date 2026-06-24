@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"laz/internal/common/apperrors"
+	"laz/internal/apperrors"
 	"laz/internal/model"
 	"laz/internal/services/connections"
 )

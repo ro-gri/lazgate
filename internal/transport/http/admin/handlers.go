@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"laz/internal/common/httpx"
 	"laz/internal/model"
 	"laz/internal/services/accounts"
 	adminauthsvc "laz/internal/services/adminauth"
@@ -14,6 +13,7 @@ import (
 	"laz/internal/services/connections"
 	"laz/internal/storage"
 	adminview "laz/internal/transport/http/admin/view"
+	"laz/internal/transport/http/httpx"
 )
 
 func (a *App) authMe(w http.ResponseWriter, r *http.Request) {

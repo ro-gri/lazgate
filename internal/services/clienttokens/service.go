@@ -3,8 +3,8 @@ package clienttokens
 import (
 	"time"
 
-	commontokens "laz/internal/common/tokens"
 	"laz/internal/model"
+	commontokens "laz/internal/security/tokens"
 )
 
 type Store interface {

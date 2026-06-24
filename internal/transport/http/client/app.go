@@ -7,14 +7,14 @@ import (
 	"time"
 
 	"errors"
-	"laz/internal/common/httpx"
-	commontokens "laz/internal/common/tokens"
-	webui "laz/internal/common/web"
 	"laz/internal/model"
+	commontokens "laz/internal/security/tokens"
 	clientauthsvc "laz/internal/services/clientauth"
 	subscriptionssvc "laz/internal/services/subscriptions"
 	"laz/internal/storage"
 	clientview "laz/internal/transport/http/client/view"
+	"laz/internal/transport/http/httpx"
+	webui "laz/internal/web"
 
 	"github.com/go-chi/chi/v5"
 )

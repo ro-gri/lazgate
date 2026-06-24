@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"laz/internal/common/httpx"
 	"laz/internal/model"
 	clientauthsvc "laz/internal/services/clientauth"
 	"laz/internal/storage"
 	clientview "laz/internal/transport/http/client/view"
+	"laz/internal/transport/http/httpx"
 )
 
 func (a *App) setupPIN(w http.ResponseWriter, r *http.Request) {

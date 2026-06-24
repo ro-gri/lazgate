@@ -4,8 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"laz/internal/common/httpx"
-	commontokens "laz/internal/common/tokens"
+	commontokens "laz/internal/security/tokens"
 	"laz/internal/services/accounts"
 	adminauthsvc "laz/internal/services/adminauth"
 	auditsvc "laz/internal/services/audit"
@@ -14,6 +13,7 @@ import (
 	"laz/internal/services/connections"
 	subscriptionssvc "laz/internal/services/subscriptions"
 	"laz/internal/storage"
+	"laz/internal/transport/http/httpx"
 )
 
 type Server struct {

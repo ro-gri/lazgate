@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"laz/internal/common/httpx"
-	commontokens "laz/internal/common/tokens"
 	"laz/internal/model"
+	commontokens "laz/internal/security/tokens"
 	subscriptionssvc "laz/internal/services/subscriptions"
 	"laz/internal/storage"
+	"laz/internal/transport/http/httpx"
 )
 
 func (a *App) hpSubscription(w http.ResponseWriter, r *http.Request) {

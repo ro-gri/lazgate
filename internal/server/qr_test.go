@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"laz/internal/common/httpx"
+	"laz/internal/transport/http/httpx"
 )
 
 func TestWriteQRCodePNG(t *testing.T) {

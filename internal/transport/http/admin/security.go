@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"strings"
 
-	"laz/internal/common/httpx"
 	adminauthsvc "laz/internal/services/adminauth"
+	"laz/internal/transport/http/httpx"
 )
 
 func (a *App) sameOriginGuard(next http.Handler) http.Handler {

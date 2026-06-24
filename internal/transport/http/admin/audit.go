@@ -3,9 +3,9 @@ package admin
 import (
 	"net/http"
 
-	"laz/internal/common/httpx"
 	auditsvc "laz/internal/services/audit"
 	adminview "laz/internal/transport/http/admin/view"
+	"laz/internal/transport/http/httpx"
 )
 
 func (a *App) auditLogs(w http.ResponseWriter, r *http.Request) {

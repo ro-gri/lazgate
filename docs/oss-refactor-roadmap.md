@@ -28,7 +28,11 @@ libraries, auditable database changes, and safer authentication.
 - `internal/integrations`: low-level VPN server/panel adapters.
 - `internal/storage`: SQLite/PostgreSQL persistence and migrations.
 - `internal/storage/record`: persisted row/record shapes.
-- `internal/common`: technical helpers only.
+- `internal/web`: embedded admin/client/shared web assets.
+- `internal/config`: application environment configuration.
+- `internal/security/tokens`: token generation and hashing helpers.
+- `internal/transport/http/httpx`: HTTP response/error helpers.
+- `internal/apperrors`: shared application error types.
 
 ## Dependency rules
 
@@ -41,13 +45,13 @@ libraries, auditable database changes, and safer authentication.
 - `internal/integrations` must not import admin/client transport packages.
 - `internal/storage` must not import app, transport, services, or integrations.
 - `internal/model` must not import application layers.
-- `internal/common` must stay technical and avoid business ownership.
+- Shared helper packages must stay technical and avoid business ownership.
 
 ## Remaining work
 
 - Continue narrowing service dependencies on the monolithic `storage.Store`.
 - Split large model files into focused files once the business vocabulary settles.
-- Review `common/httpx`; QR helpers may deserve a transport/client package.
+- Review `transport/http/httpx`; QR helpers may deserve a transport/client package.
 - Consider splitting embedded web assets if admin and client become separate
   deployable apps.
 - Add optional email/Telegram verification and recovery flows later.

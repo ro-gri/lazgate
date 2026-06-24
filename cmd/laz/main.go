@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"laz/internal/common/config"
+	"laz/internal/config"
 	"laz/internal/server"
 	"laz/internal/storage"
 )

@@ -1,6 +1,6 @@
 package clientauth
 
-import "laz/internal/common/apperrors"
+import "laz/internal/apperrors"
 
 type ValidationError = apperrors.ValidationError
 

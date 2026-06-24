@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"laz/internal/common/httpx"
-	webui "laz/internal/common/web"
+	"laz/internal/transport/http/httpx"
+	webui "laz/internal/web"
 )
 
 func (a *App) redirectToWebRoot(w http.ResponseWriter, r *http.Request) {

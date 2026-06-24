@@ -17,7 +17,7 @@ import (
 	"net/http"
 	"strings"
 
-	"laz/internal/common/apperrors"
+	"laz/internal/apperrors"
 	"laz/internal/storage"
 
 	qrcode "github.com/skip2/go-qrcode"

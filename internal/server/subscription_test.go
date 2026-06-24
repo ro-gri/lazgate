@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	commontokens "laz/internal/common/tokens"
 	"laz/internal/model"
+	commontokens "laz/internal/security/tokens"
 	"laz/internal/services/connections"
 	subscriptionssvc "laz/internal/services/subscriptions"
 	"laz/internal/storage"
