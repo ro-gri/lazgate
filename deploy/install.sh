@@ -109,6 +109,35 @@ confirm_saved() {
   fi
 }
 
+print_result() {
+  cat <<EOF
+
+LazGate installed.
+
+Public URL: ${PUBLIC_BASE_URL}
+Admin URL:  ${PUBLIC_BASE_URL}${WEB_PREFIX}/login
+
+Admin token:
+${ADMIN_TOKEN}
+
+Secret key:
+${SECRET_KEY}
+
+Files:
+  ${INSTALL_DIR}/.env
+  ${INSTALL_DIR}/docker-compose.yml
+  ${INSTALL_DIR}/Caddyfile
+  ${INSTALL_DIR}/data/laz.db
+  ${INSTALL_DIR}/keys/
+
+Commands:
+  cd ${INSTALL_DIR} && docker compose ps
+  cd ${INSTALL_DIR} && docker compose logs -f
+  cd ${INSTALL_DIR} && docker compose pull && docker compose up -d
+
+EOF
+}
+
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run as root, for example: curl -fsSL .../install.sh | sudo bash" >&2
   exit 1
@@ -179,31 +208,7 @@ if [ "$ok" != "1" ]; then
   exit 1
 fi
 
-cat <<EOF
-
-LazGate installed.
-
-Public URL: ${PUBLIC_BASE_URL}
-Admin URL:  ${PUBLIC_BASE_URL}${WEB_PREFIX}/login
-
-Admin token:
-${ADMIN_TOKEN}
-
-Secret key:
-${SECRET_KEY}
-
-Files:
-  ${INSTALL_DIR}/.env
-  ${INSTALL_DIR}/docker-compose.yml
-  ${INSTALL_DIR}/Caddyfile
-  ${INSTALL_DIR}/data/laz.db
-  ${INSTALL_DIR}/keys/
-
-Commands:
-  cd ${INSTALL_DIR} && docker compose ps
-  cd ${INSTALL_DIR} && docker compose logs -f
-  cd ${INSTALL_DIR} && docker compose pull && docker compose up -d
-
-EOF
-
+echo "LazGate health check passed."
+print_result
 confirm_saved
+echo "Installation completed."
