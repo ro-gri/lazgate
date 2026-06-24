@@ -5,6 +5,25 @@ INSTALL_DIR="${LAZ_INSTALL_DIR:-/opt/lazgate}"
 FORCE="${LAZ_FORCE:-0}"
 REMOVE_IMAGE="${LAZ_REMOVE_IMAGE:-0}"
 
+confirm_delete() {
+  if [ "$FORCE" = "1" ]; then
+    return
+  fi
+
+  if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
+    echo "Unable to ask for confirmation without a TTY." >&2
+    echo "Rerun with LAZ_FORCE=1 if this is automation." >&2
+    exit 1
+  fi
+
+  printf '%s' "Type delete to continue: " > /dev/tty
+  read -r confirmation < /dev/tty
+  if [ "$confirmation" != "delete" ]; then
+    echo "Uninstall cancelled."
+    exit 1
+  fi
+}
+
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run as root, for example: curl -fsSL .../uninstall.sh | sudo bash" >&2
   exit 1
@@ -41,14 +60,7 @@ It will not remove unrelated containers, volumes, networks, or images.
 
 EOF
 
-if [ "$FORCE" != "1" ] && [ -t 0 ]; then
-  printf '%s' "Type delete to continue: "
-  read -r confirmation
-  if [ "$confirmation" != "delete" ]; then
-    echo "Uninstall cancelled."
-    exit 1
-  fi
-fi
+confirm_delete
 
 cd "$INSTALL_DIR"
 

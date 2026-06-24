@@ -90,6 +90,25 @@ install_docker() {
   apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 }
 
+confirm_saved() {
+  if [ "${LAZ_NO_CONFIRM:-0}" = "1" ]; then
+    return
+  fi
+
+  if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
+    echo "Unable to ask for confirmation without a TTY." >&2
+    echo "Save the admin token and secret key, then rerun with LAZ_NO_CONFIRM=1 if this is automation." >&2
+    exit 1
+  fi
+
+  printf '%s' "Type ok after saving the admin token and secret key: " > /dev/tty
+  read -r confirmation < /dev/tty
+  if [ "$confirmation" != "ok" ]; then
+    echo "Confirmation was not received. Save the values above before closing this terminal." >&2
+    exit 1
+  fi
+}
+
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run as root, for example: curl -fsSL .../install.sh | sudo bash" >&2
   exit 1
@@ -187,11 +206,4 @@ Commands:
 
 EOF
 
-if [ "${LAZ_NO_CONFIRM:-0}" != "1" ] && [ -t 0 ]; then
-  printf '%s' "Type ok after saving the admin token and secret key: "
-  read -r confirmation
-  if [ "$confirmation" != "ok" ]; then
-    echo "Confirmation was not received. Save the values above before closing this terminal."
-    exit 1
-  fi
-fi
+confirm_saved
