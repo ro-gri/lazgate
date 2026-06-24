@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: |
+          go test ./...
+          node --test tests/web/*.test.cjs
+
+      - name: Check installer scripts
+        run: |
+          bash -n deploy/install.sh deploy/uninstall.sh
+          shellcheck deploy/install.sh deploy/uninstall.sh
+
+      - name: Build server and agent binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME}"
+          if [[ "$VERSION" != v* ]]; then VERSION="dev-${GITHUB_SHA:0:12}"; fi
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o dist/laz-linux-amd64 ./cmd/laz
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o dist/laz-linux-arm64 ./cmd/laz
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o dist/lazgate-hysteria-agent-linux-amd64 ./cmd/lazgate-hysteria-agent
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o dist/lazgate-hysteria-agent-linux-arm64 ./cmd/lazgate-hysteria-agent
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o dist/lazgate-amnezia-agent-linux-amd64 ./cmd/lazgate-amnezia-agent
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o dist/lazgate-amnezia-agent-linux-arm64 ./cmd/lazgate-amnezia-agent
+          cp deploy/install.sh deploy/uninstall.sh dist/
+          (cd dist && sha256sum laz-linux-* lazgate-*-agent-linux-* install.sh uninstall.sh > checksums.txt)
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: lazgate-release-assets
+          path: dist/*
+
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/laz-linux-amd64
+            dist/laz-linux-arm64
+            dist/install.sh
+            dist/uninstall.sh
+            dist/lazgate-hysteria-agent-linux-amd64
+            dist/lazgate-hysteria-agent-linux-arm64
+            dist/lazgate-amnezia-agent-linux-amd64
+            dist/lazgate-amnezia-agent-linux-arm64
+            dist/checksums.txt

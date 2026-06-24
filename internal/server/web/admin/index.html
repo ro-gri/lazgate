@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>__APP_NAME__</title>
+    <link rel="stylesheet" href="__WEB_PREFIX__/assets/styles.css">
+  </head>
+  <body data-web-prefix="__WEB_PREFIX__">
+    <header class="topbar">
+      <a class="brand" href="__WEB_PREFIX__/" data-link>__APP_NAME__</a>
+      <nav class="topnav" aria-label="Admin navigation">
+        <a class="app-nav-link" href="__WEB_PREFIX__/" data-link>Dashboard</a>
+        <a class="app-nav-link" href="__WEB_PREFIX__/accounts" data-link>Accounts</a>
+        <a class="app-nav-link" href="__WEB_PREFIX__/nodes" data-link>Серверы</a>
+        <a class="admin-nav-link" data-admin-section="invites" data-privileged-admin href="__WEB_PREFIX__/administration/invites" data-link>Приглашения</a>
+        <a class="admin-nav-link" data-admin-section="admins" data-privileged-admin href="__WEB_PREFIX__/administration/admins" data-link>Администраторы</a>
+        <a class="management-link" data-privileged-admin href="__WEB_PREFIX__/administration/invites" data-link>Администрирование</a>
+        <a class="admin-return-link" href="__WEB_PREFIX__/" data-link>Вернуться в приложение</a>
+      </nav>
+      <button id="logout" type="button">Выйти</button>
+    </header>
+
+    <main id="app" class="shell"></main>
+
+    <footer class="event-history-footer" aria-label="История событий">
+      <button id="event-history-link" class="event-history-link" type="button" disabled>События: <span id="event-history-count">0</span></button>
+    </footer>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="__WEB_PREFIX__/assets/ui.js" defer></script>
+    <script type="application/json" id="country-codes">__COUNTRY_CODES__</script>
+    <script type="application/json" id="hysteria-defaults">__HYSTERIA_DEFAULTS__</script>
+    <script src="__WEB_PREFIX__/assets/shakespeare-sonnets.js" defer></script>
+    <script src="__WEB_PREFIX__/assets/hysteria-settings.js" defer></script>
+    <script src="__WEB_PREFIX__/assets/ipaddr.js" defer></script>
+    <script src="__WEB_PREFIX__/assets/server-fields.js" defer></script>
+    <script src="__WEB_PREFIX__/assets/install-progress.js" defer></script>
+    <script src="__WEB_PREFIX__/assets/amnezia-validation.js" defer></script>
+    <script src="__WEB_PREFIX__/assets/amnezia-settings.js" defer></script>
+    <script src="__WEB_PREFIX__/assets/app.js" defer></script>
+  </body>
+</html>

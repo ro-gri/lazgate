@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>__APP_NAME__ invite</title>
+    <link rel="stylesheet" href="__WEB_PREFIX__/assets/styles.css">
+  </head>
+  <body data-web-prefix="__WEB_PREFIX__" class="login-page">
+    <main class="login-shell">
+      <form id="invite-form" class="login-box">
+        <h1>Регистрация администратора</h1>
+        <label>
+          Код приглашения
+          <input id="invite-code" name="invite_code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="XXXX-XXXX-XXXX" autofocus required>
+        </label>
+        <label>
+          Логин
+          <input id="admin-login" name="login" type="text" autocomplete="username" required>
+        </label>
+        <label>
+          Отображаемое имя
+          <input id="display-name" name="display_name" type="text" autocomplete="name">
+        </label>
+        <label>
+          Пароль
+          <input id="admin-password" name="password" type="password" autocomplete="new-password" required>
+        </label>
+        <label>
+          Повторите пароль
+          <input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" required>
+        </label>
+        <p class="muted">Введите одноразовый код из приглашения и задайте пароль.</p>
+        <button type="submit" class="primary">Зарегистрироваться</button>
+      </form>
+    </main>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="__WEB_PREFIX__/assets/ui.js" defer></script>
+    <script src="__WEB_PREFIX__/assets/invite.js" defer></script>
+  </body>
+</html>

@@ -1,0 +1,5 @@
+ipaddr.js 2.5.0
+Source: https://registry.npmjs.org/ipaddr.js/-/ipaddr.js-2.5.0.tgz
+Upstream: https://github.com/whitequark/ipaddr.js
+License: MIT (see ipaddr.LICENSE).
+The upstream browser-compatible lib/ipaddr.js is vendored without modification.

@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package {{ .ProtoPackage }};
+
+option go_package = "{{ .GoPackage }}";
+
+import "proto/agent_common.proto";
+import "{{ .CredentialImport }}";
+
+service Agent {
+  rpc Connect(stream laz.nodeproto.agentcommon.AgentMessage) returns (stream ServerMessage);
+}
+
+message ServerMessage {
+  string type = 1;
+  string request_id = 2;
+  laz.nodeproto.agentcommon.AuthRefresh auth_refresh = 3;
+  laz.nodeproto.agentcommon.RuntimeCommand runtime_command = 4;
+  laz.nodeproto.agentcommon.UsageAck usage_ack = 5;
+  AuthManifestResponse auth_manifest_response = 6;
+  EditServerConfig edit_server_config = 7;
+}
+
+message AuthManifestResponse {
+  string node_id = 1;
+  int64 manifest_started_at = 2;
+  bool full = 3;
+  repeated CredentialChange changes = 5;
+  string error = 6;
+}
+
+message EditServerConfig {
+  string node_id = 1;
+  uint64 revision = 2;
+  ServerConfig server_config = 3;
+}
+
+message CredentialChange {
+  string connection_id = 1;
+  laz.nodeproto.agentcommon.CredentialChangeOp op = 2;
+  Credential payload = 3;
+}

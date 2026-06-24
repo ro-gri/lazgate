@@ -1,0 +1,16 @@
+[Unit]
+Description=LazGate agent (development debugger)
+Wants=network-online.target
+After=network-online.target lab-prepare.service lab-awg.service
+Requires=lab-prepare.service
+
+[Service]
+User=10001
+Group=lazgate
+ExecStart=/usr/local/bin/agent-start
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

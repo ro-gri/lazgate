@@ -1,0 +1,15 @@
+package {{ .Package }}
+
+import "laz/internal/protocol"
+
+func NewManifestResponseBuilder() protocol.ManifestResponseBuilderFuncs[*CredentialChange, *AuthManifestResponse] {
+	return protocol.NewManifestResponseBuilder(func(values protocol.ManifestResponseValues[*CredentialChange]) *AuthManifestResponse {
+		return &AuthManifestResponse{
+			NodeId:            values.NodeID,
+			ManifestStartedAt: values.ManifestStartedAtMS,
+			Full:              values.Full,
+			Changes:           values.Changes,
+			Error:             values.Error,
+		}
+	})
+}

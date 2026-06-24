@@ -1,0 +1,11 @@
+[Unit]
+Description=Prepare disposable LazGate node
+Before=ssh.service lazgate-agent.service hysteria-server.service lab-awg.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/lab-node-prepare
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

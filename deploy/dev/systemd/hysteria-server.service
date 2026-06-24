@@ -1,0 +1,17 @@
+[Unit]
+Description=Hysteria server
+After=network-online.target lab-prepare.service
+Requires=lab-prepare.service
+
+[Service]
+User=h2-laz-agent
+Group=lazgate
+WorkingDirectory=~
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+ExecStart=/usr/local/bin/hysteria server -c /etc/hysteria/config.yaml
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

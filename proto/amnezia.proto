@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package laz.nodeproto.amnezia;
+
+option go_package = "laz/generated/nodeproto/amnezia";
+
+message Credential {
+  reserved 1, 2, 3, 7, 10, 11;
+  string public_key = 4;
+  string preshared_key = 5;
+  string assigned_ipv4 = 6;
+  string desired_status = 8;
+  uint32 persistent_keepalive = 9;
+}
+
+message ServerConfig {
+  uint32 jc = 1;
+  uint32 jmin = 2;
+  uint32 jmax = 3;
+  uint32 s1 = 4;
+  uint32 s2 = 5;
+  uint32 s3 = 6;
+  uint32 s4 = 7;
+  string h1 = 8;
+  string h2 = 9;
+  string h3 = 10;
+  string h4 = 11;
+  string i1 = 12;
+  string i2 = 13;
+  string i3 = 14;
+  string i4 = 15;
+  string i5 = 16;
+  string server_private_key = 17;
+  string server_ipv4 = 18;
+  string client_ipv4_cidr = 19;
+  uint32 listen_port = 20;
+  string header_protection_key = 21;
+  string content_padding_addition = 22;
+  map<string, string> timings = 23;
+  bool random_trailers = 24;
+  bool disable_cookies = 25;
+}

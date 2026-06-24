@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package laz.nodeproto.hysteria;
+
+option go_package = "laz/generated/nodeproto/hysteria";
+
+message Credential {
+  reserved 2, 3, 4, 5;
+  string password_hash = 1;
+}
+
+message ServerConfig {
+  string endpoint_host = 1;
+  bytes settings_json = 2;
+  string masquerade_fileset_id = 3;
+  bytes masquerade_archive = 4;
+}

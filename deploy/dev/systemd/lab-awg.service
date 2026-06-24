@@ -1,0 +1,15 @@
+[Unit]
+Description=AmneziaWG 3.1 userspace runtime (development only)
+Requires=lab-prepare.service
+After=lab-prepare.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/lib/lazgate-dev/awg-start.sh
+ExecStopPost=-/usr/sbin/ip link del awg0
+Restart=on-failure
+RestartSec=2
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

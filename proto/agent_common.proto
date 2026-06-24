@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package laz.nodeproto.agentcommon;
+
+option go_package = "laz/generated/nodeproto/agentcommon";
+
+enum CredentialChangeOp {
+  CREDENTIAL_CHANGE_OP_UNSPECIFIED = 0;
+  CREDENTIAL_CHANGE_OP_UPSERT = 1;
+  CREDENTIAL_CHANGE_OP_DELETE = 2;
+}
+
+message AgentHello {
+  string node_id = 1;
+  string agent_version = 2;
+  string protocol_version = 3;
+  string installation_id = 4;
+  string agent_type = 5;
+}
+
+message Heartbeat {
+  string node_id = 1;
+  string agent_version = 2;
+  string protocol_version = 3;
+  string runtime_status = 4;
+}
+
+message OnlineReport {
+  string node_id = 1;
+  int64 at_ms = 2;
+  repeated OnlineConnection connections = 3;
+}
+
+message OnlineConnection {
+  string connection_id = 1;
+  int32 count = 2;
+  string native_auth_id = 3;
+}
+
+message UsageBatch {
+  string node_id = 1;
+  int64 from_ms = 2;
+  int64 to_ms = 3;
+  repeated UsageRecord records = 4;
+}
+
+message UsageRecord {
+  string connection_id = 1;
+  int64 tx_bytes = 2;
+  int64 rx_bytes = 3;
+}
+
+message UsageAck {
+  bool ok = 1;
+  repeated AcknowledgedUsage records = 2;
+}
+
+message AcknowledgedUsage {
+  string connection_id = 1;
+  int64 rx_bytes = 2;
+  int64 tx_bytes = 3;
+}
+
+message RuntimeCommand {
+  string id = 1;
+  string type = 2;
+  int64 issued_ms = 3;
+  int64 expires_ms = 4;
+  map<string, string> payload = 5;
+}
+
+message RuntimeCommandResult {
+  string command_id = 1;
+  string status = 2;
+  string message = 3;
+  string error = 4;
+}
+
+message AuthRefresh {
+  string node_id = 1;
+  string account_id = 2;
+  string operation = 3;
+  int64 manifest_started_at = 5;
+  int64 snapshot_version_ms = 6;
+}
+
+message AuthRefreshResult {
+  string node_id = 1;
+  string account_id = 2;
+  string status = 3;
+  string message = 4;
+  string error = 5;
+  int64 applied_snapshot_version_ms = 6;
+}
+
+message AuthManifestRequest {
+  string node_id = 1;
+  int64 since_manifest_started_at = 2;
+  bool full = 3;
+  uint32 page_size = 4;
+  string from_connection_id = 5;
+}
+
+message ServerConfigApplyResult {
+  string node_id = 1;
+  uint64 desired_revision = 2;
+  uint64 applied_revision = 3;
+  string correlation_id = 4;
+  string status = 5;
+  string error = 6;
+}
+
+message AgentMessage {
+  string type = 1;
+  string request_id = 2;
+  AgentHello hello = 3;
+  Heartbeat heartbeat = 4;
+  OnlineReport online_report = 5;
+  UsageBatch usage_batch = 6;
+  RuntimeCommandResult runtime_command_result = 7;
+  AuthRefreshResult auth_refresh_result = 8;
+  AuthManifestRequest auth_manifest_request = 9;
+  ServerConfigApplyResult server_config_apply_result = 10;
+}
