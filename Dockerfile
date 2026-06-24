@@ -1,4 +1,4 @@
-FROM golang:1.24-bookworm AS build
+FROM golang:1.25-bookworm AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -10,7 +10,7 @@ FROM debian:bookworm-slim
 WORKDIR /app
 COPY --from=build /out/laz /usr/local/bin/laz
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates openssh-client \
+    && apt-get install -y --no-install-recommends ca-certificates openssh-client wget \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -r -u 10001 -d /app appuser \
     && mkdir -p /app/data /app/keys /app/.ssh \

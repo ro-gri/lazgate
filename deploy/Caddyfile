@@ -1,0 +1,9 @@
+{$LAZ_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		X-Robots-Tag "noindex, nofollow, noarchive"
+	}
+
+	reverse_proxy laz:8088
+}

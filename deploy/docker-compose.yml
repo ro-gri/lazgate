@@ -1,0 +1,35 @@
+services:
+  laz:
+    image: ${LAZ_IMAGE}
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./keys:/app/keys:ro
+      - ./blank.html:/app/blank.html:ro
+    expose:
+      - "8088"
+    networks:
+      - lazgate
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - laz
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      LAZ_DOMAIN: ${LAZ_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy_data:/data
+      - ./caddy_config:/config
+    networks:
+      - lazgate
+
+networks:
+  lazgate:
+    name: lazgate
