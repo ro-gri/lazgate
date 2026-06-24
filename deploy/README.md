@@ -120,3 +120,30 @@ docker compose logs -f
 docker compose pull
 docker compose up -d
 ```
+
+## Uninstall
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/uninstall.sh | sudo bash
+```
+
+The uninstall script removes only the LazGate Compose services, volumes, and
+install directory. It does not remove Docker Engine and does not prune Docker.
+Unrelated containers, images, volumes, and networks are left untouched.
+
+By default, it asks the user to type `delete`.
+
+For automation:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/uninstall.sh \
+  | sudo env LAZ_FORCE=1 bash
+```
+
+By default, the LazGate image is left in Docker's local image cache. To remove
+that image too:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/uninstall.sh \
+  | sudo env LAZ_REMOVE_IMAGE=1 bash
+```
