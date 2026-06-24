@@ -114,6 +114,7 @@ WEB_PREFIX="${LAZ_WEB_PREFIX:-/fa-$(random_hex 12)}"
 SECRET_KEY="${LAZ_SECRET_KEY:-$(random_b64 32)}"
 
 mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/keys" "$INSTALL_DIR/caddy_data" "$INSTALL_DIR/caddy_config"
+chown 10001:10001 "$INSTALL_DIR/data" "$INSTALL_DIR/keys"
 fetch "$COMPOSE_URL" "$INSTALL_DIR/docker-compose.yml"
 fetch "$CADDYFILE_URL" "$INSTALL_DIR/Caddyfile"
 fetch "$BLANK_URL" "$INSTALL_DIR/blank.html"
@@ -154,6 +155,8 @@ done
 if [ "$ok" != "1" ]; then
   echo "LazGate did not become healthy in time. Check logs:" >&2
   echo "  cd $INSTALL_DIR && docker compose logs --tail=100" >&2
+  docker compose ps >&2 || true
+  docker compose logs --tail=100 >&2 || true
   exit 1
 fi
 
