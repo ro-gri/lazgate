@@ -22,7 +22,7 @@ If `LAZ_DOMAIN` is not provided, the installer detects the public IPv4 address
 and uses:
 
 ```text
-<public-ip>.sslip.io
+<public-ip-with-dashes>.sslip.io
 ```
 
 ## Install with a domain

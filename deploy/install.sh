@@ -157,7 +157,7 @@ fi
 DOMAIN="${LAZ_DOMAIN:-}"
 if [ -z "$DOMAIN" ]; then
   IP="$(public_ipv4)"
-  DOMAIN="${IP}.sslip.io"
+  DOMAIN="$(printf '%s' "$IP" | tr '.' '-').sslip.io"
 fi
 
 PUBLIC_BASE_URL="${LAZ_PUBLIC_BASE_URL:-https://${DOMAIN}}"
