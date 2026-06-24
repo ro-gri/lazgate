@@ -47,6 +47,10 @@ fetch() {
   exit 1
 }
 
+compose() {
+  docker compose "$@" < /dev/null
+}
+
 public_ipv4() {
   for url in \
     "https://api.ipify.org" \
@@ -187,13 +191,13 @@ chmod 600 "$INSTALL_DIR/.env"
 chmod 755 "$INSTALL_DIR"
 
 cd "$INSTALL_DIR"
-docker compose pull
-docker compose up -d
+compose pull
+compose up -d
 
 echo "Waiting for LazGate to start..."
 ok=0
 for _ in $(seq 1 30); do
-  if docker compose exec -T laz wget -qO- http://127.0.0.1:8088/healthz >/dev/null 2>&1; then
+  if compose exec -T laz wget -qO- http://127.0.0.1:8088/healthz >/dev/null 2>&1; then
     ok=1
     break
   fi
@@ -203,8 +207,8 @@ done
 if [ "$ok" != "1" ]; then
   echo "LazGate did not become healthy in time. Check logs:" >&2
   echo "  cd $INSTALL_DIR && docker compose logs --tail=100" >&2
-  docker compose ps >&2 || true
-  docker compose logs --tail=100 >&2 || true
+  compose ps >&2 || true
+  compose logs --tail=100 >&2 || true
   exit 1
 fi
 

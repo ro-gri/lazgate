@@ -5,6 +5,10 @@ INSTALL_DIR="${LAZ_INSTALL_DIR:-/opt/lazgate}"
 FORCE="${LAZ_FORCE:-0}"
 REMOVE_IMAGE="${LAZ_REMOVE_IMAGE:-0}"
 
+compose() {
+  docker compose "$@" < /dev/null
+}
+
 confirm_delete() {
   if [ "$FORCE" = "1" ]; then
     return
@@ -70,7 +74,7 @@ if [ -f .env ]; then
 fi
 
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-  if ! docker compose down --volumes --remove-orphans; then
+  if ! compose down --volumes --remove-orphans; then
     echo "docker compose down reported an error. Continuing with filesystem cleanup." >&2
     echo "Check Docker manually if LazGate containers or network remain." >&2
   fi
