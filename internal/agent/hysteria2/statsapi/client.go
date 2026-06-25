@@ -1,12 +1,12 @@
 package statsapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 )
@@ -79,13 +79,15 @@ func (c *Client) Online(ctx context.Context) ([]OnlineRecord, error) {
 }
 
 func (c *Client) Kick(ctx context.Context, credentialID string) error {
-	form := url.Values{}
-	form.Set("id", credentialID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/kick", strings.NewReader(form.Encode()))
+	payload, err := json.Marshal([]string{credentialID})
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/kick", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
 	c.auth(req)
 	res, err := c.http.Do(req)
 	if err != nil {
