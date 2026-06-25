@@ -15,36 +15,62 @@ libraries, auditable database changes, and safer authentication.
 - Server-side sessions, recovery codes, field-level secret encryption, audit
   logging, policy tags, dynamic config profiles, and PostgreSQL support are
   already implemented.
+- LazGate Agent is part of the repository as a separate host-side binary under
+  `cmd/lazgate-agent` and `internal/agent`.
+- Native Hysteria2 nodes are managed through LazGate-controlled local HTTP auth,
+  outbound mTLS gRPC agent control, traffic/online reporting, and whitelisted
+  runtime commands.
+- A compact operational dashboard is available for node health, online users,
+  traffic aggregation, and availability/downtime.
+- GitHub release workflow builds the server image and tag-release
+  `lazgate-agent` binaries/checksums.
 
 ## Current boundaries
 
 - `cmd/laz`: process entrypoint only.
-- `internal/server`: HTTP server assembly and route wiring.
-- `internal/transport/http`: HTTP/API/UI layer split into `admin`, `client`,
-  and `public`.
-- `internal/services`: business workflows, including accounts, connections,
-  admin auth, client auth, audit, subscriptions, and client tokens.
-- `internal/model`: shared business entities used by services and storage.
-- `internal/integrations`: low-level VPN server/panel adapters.
-- `internal/storage`: SQLite/PostgreSQL persistence and migrations.
-- `internal/storage/record`: persisted row/record shapes.
-- `internal/web`: embedded admin/client/shared web assets.
-- `internal/config`: application environment configuration.
-- `internal/security/tokens`: token generation and hashing helpers.
-- `internal/transport/http/httpx`: HTTP response/error helpers.
-- `internal/apperrors`: shared application error types.
+- `cmd/lazgate-agent`: LazGate Agent process entrypoint only.
+- `internal/server`: server-side business workflows plus HTTP server assembly
+  and route wiring.
+- `internal/server/transport/http`: HTTP/API/UI layer split into `admin`,
+  `client`, and `public`.
+- `internal/server/agentcontrol`: server side of the outbound mTLS gRPC agent
+  stream, auth snapshots, usage ingestion, online reports, and runtime command
+  delivery.
+- `internal/server/dashboard`: server-side dashboard aggregation logic for
+  selected-range traffic, online users, node rows, and availability.
+- `internal/server/provisioning`: install/attach workflows for native Hysteria2
+  nodes and LazGate Agent.
+- `internal/agent`: host-side LazGate Agent runtime, auth endpoint, local state,
+  sync, traffic, online collection, and runtime command execution.
+- `internal/nodeproto`: protobuf/gRPC generated types shared by server and
+  agent.
+- `internal/server/model`: server business entities used by server workflows
+  and storage.
+- `internal/server/integrations`: low-level VPN server/panel adapters.
+- `internal/server/storage`: SQLite/PostgreSQL persistence and migrations.
+- `internal/server/storage/record`: persisted row/record shapes.
+- `internal/server/web`: embedded admin/client/shared web assets.
+- `internal/server/config`: server application environment configuration.
+- `internal/server/security/tokens`: server token generation and hashing
+  helpers.
+- `internal/server/transport/http/httpx`: HTTP response/error helpers.
+- `internal/server/apperrors`: server application error types.
 
 ## Dependency rules
 
 - `cmd` may import `internal/server`.
-- `internal/server` may wire transport, services, storage, and integrations.
-- `internal/transport/http` may call services and view helpers, but should not
-  contain business workflows.
-- `internal/services` may depend on `internal/model`, narrow storage/provider
-  interfaces, and integrations through connection-provider abstractions.
-- `internal/integrations` must not import admin/client transport packages.
-- `internal/storage` must not import app, transport, services, or integrations.
-- `internal/model` must not import application layers.
+- `internal/server` may wire transport, storage, and integrations.
+- `internal/server/transport/http` may call server workflows and view helpers,
+  but should not contain business workflows.
+- `internal/server/*` workflows may depend on `internal/server/model`, narrow
+  storage/provider interfaces, and integrations through connection-provider
+  abstractions.
+- `internal/agent` must not import `internal/server` or HTTP UI packages.
+- `internal/server/integrations` must not import admin/client transport
+  packages.
+- `internal/server/storage` must not import app, transport, server workflows,
+  or integrations.
+- `internal/server/model` must not import application layers.
 - Shared helper packages must stay technical and avoid business ownership.
 
 ## Remaining work
@@ -55,6 +81,10 @@ libraries, auditable database changes, and safer authentication.
 - Consider splitting embedded web assets if admin and client become separate
   deployable apps.
 - Add optional email/Telegram verification and recovery flows later.
+- Validate the dashboard and node runtime views against real multi-node traffic
+  before treating the UI as stable.
+- Add retention/rollup policy for usage records, online snapshots, and node
+  status intervals if production traffic grows beyond simple range queries.
 
 ### Dynamic Profile Management
 

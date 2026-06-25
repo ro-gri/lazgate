@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"laz/internal/model"
-	"laz/internal/storage"
+	"laz/internal/server/model"
+	"laz/internal/server/storage"
 )
 
 func TestTokensPostReusesUserClientToken(t *testing.T) {

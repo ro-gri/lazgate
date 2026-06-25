@@ -4,16 +4,18 @@ import (
 	"net/http"
 	"strings"
 
-	commontokens "laz/internal/security/tokens"
-	"laz/internal/services/accounts"
-	adminauthsvc "laz/internal/services/adminauth"
-	auditsvc "laz/internal/services/audit"
-	clientauthsvc "laz/internal/services/clientauth"
-	clienttokens "laz/internal/services/clienttokens"
-	"laz/internal/services/connections"
-	subscriptionssvc "laz/internal/services/subscriptions"
-	"laz/internal/storage"
-	"laz/internal/transport/http/httpx"
+	"laz/internal/server/accounts"
+	adminauthsvc "laz/internal/server/adminauth"
+	"laz/internal/server/agentcontrol"
+	auditsvc "laz/internal/server/audit"
+	clientauthsvc "laz/internal/server/clientauth"
+	clienttokens "laz/internal/server/clienttokens"
+	"laz/internal/server/connections"
+	provisioningsvc "laz/internal/server/provisioning"
+	commontokens "laz/internal/server/security/tokens"
+	"laz/internal/server/storage"
+	subscriptionssvc "laz/internal/server/subscriptions"
+	"laz/internal/server/transport/http/httpx"
 )
 
 type Server struct {
@@ -24,6 +26,8 @@ type Server struct {
 	audit         *auditsvc.Recorder
 	clientAuth    *clientauthsvc.Service
 	clientTokens  *clienttokens.Service
+	nodeInstall   *provisioningsvc.Installer
+	agentControl  *agentcontrol.Hub
 	adminAuth     *adminauthsvc.Authenticator
 	publicBaseURL string
 	webPrefix     string
@@ -33,6 +37,8 @@ type Server struct {
 
 func NewServer(st store.Store, adminToken string, publicBaseURL string, webPrefix string) *Server {
 	connectionService := connections.New(st, commontokens.New)
+	agentControl := agentcontrol.NewHub(st)
+	connectionService.SetAgentControl(agentControl)
 	server := &Server{
 		store:         st,
 		accounts:      accounts.New(st, connectionService),
@@ -41,12 +47,22 @@ func NewServer(st store.Store, adminToken string, publicBaseURL string, webPrefi
 		audit:         auditsvc.New(st),
 		clientAuth:    clientauthsvc.New(st, connectionService),
 		clientTokens:  clienttokens.New(st),
+		nodeInstall:   provisioningsvc.New(st),
+		agentControl:  agentControl,
 		publicBaseURL: strings.TrimRight(publicBaseURL, "/"),
 		webPrefix:     normalizeWebPrefix(webPrefix),
 		appName:       "laz",
 	}
 	server.SetAdminAuth(adminToken, "")
 	return server
+}
+
+func (s *Server) AgentControl() *agentcontrol.Hub {
+	return s.agentControl
+}
+
+func (s *Server) SetProvisioningAgentServerCertPEM(pem string) {
+	s.nodeInstall.SetAgentServerCertPEM(pem)
 }
 
 func (s *Server) SetAppName(name string) {

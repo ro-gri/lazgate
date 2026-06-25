@@ -12,11 +12,8 @@ ghcr.io/ro-gri/lazgate:latest
 ## One-command install
 
 ```sh
-tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/install.sh -o "$tmp" && sudo bash "$tmp"; rc=$?; rm -f "$tmp"; exit $rc
+curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/install.sh | sudo bash
 ```
-
-This downloads the installer fully before running it, which avoids partial
-execution if the network drops while reading from `curl | bash`.
 
 If `LAZ_DOMAIN` is not provided, the installer detects the public IPv4 address
 and uses:
@@ -28,7 +25,8 @@ and uses:
 ## Install with a domain
 
 ```sh
-tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/install.sh -o "$tmp" && sudo env LAZ_DOMAIN=net.example.com bash "$tmp"; rc=$?; rm -f "$tmp"; exit $rc
+curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/install.sh \
+  | sudo env LAZ_DOMAIN=net.example.com bash
 ```
 
 The domain must resolve to the VPS. Ports `80/tcp` and `443/tcp` must be open
@@ -94,7 +92,8 @@ The installer refuses to overwrite an existing `/opt/lazgate` by default.
 To regenerate compose/env files intentionally:
 
 ```sh
-tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/install.sh -o "$tmp" && sudo env LAZ_FORCE=1 bash "$tmp"; rc=$?; rm -f "$tmp"; exit $rc
+curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/install.sh \
+  | sudo env LAZ_FORCE=1 bash
 ```
 
 Do not rotate `LAZ_SECRET_KEY` unless you know how to migrate existing encrypted
@@ -108,7 +107,8 @@ generated admin token and secret key are not missed.
 For automation:
 
 ```sh
-tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/install.sh -o "$tmp" && sudo env LAZ_NO_CONFIRM=1 bash "$tmp"; rc=$?; rm -f "$tmp"; exit $rc
+curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/install.sh \
+  | sudo env LAZ_NO_CONFIRM=1 bash
 ```
 
 ## Operations
@@ -124,7 +124,7 @@ docker compose up -d
 ## Uninstall
 
 ```sh
-tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/uninstall.sh -o "$tmp" && sudo bash "$tmp"; rc=$?; rm -f "$tmp"; exit $rc
+curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/uninstall.sh | sudo bash
 ```
 
 The uninstall script removes only the LazGate Compose services, volumes, and
@@ -136,12 +136,14 @@ By default, it asks the user to type `delete`.
 For automation:
 
 ```sh
-tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/uninstall.sh -o "$tmp" && sudo env LAZ_FORCE=1 bash "$tmp"; rc=$?; rm -f "$tmp"; exit $rc
+curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/uninstall.sh \
+  | sudo env LAZ_FORCE=1 bash
 ```
 
 By default, the LazGate image is left in Docker's local image cache. To remove
 that image too:
 
 ```sh
-tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/uninstall.sh -o "$tmp" && sudo env LAZ_REMOVE_IMAGE=1 bash "$tmp"; rc=$?; rm -f "$tmp"; exit $rc
+curl -fsSL https://raw.githubusercontent.com/ro-gri/lazgate/main/deploy/uninstall.sh \
+  | sudo env LAZ_REMOVE_IMAGE=1 bash
 ```

@@ -1,0 +1,143 @@
+syntax = "proto3";
+
+package laz.nodeproto;
+
+option go_package = "laz/internal/nodeproto;nodeproto";
+
+service AgentControl {
+  rpc Connect(stream AgentMessage) returns (stream ServerMessage);
+}
+
+message AuthManifestRequest {
+  string node_id = 1;
+  int64 since_manifest_started_at = 2;
+  bool full = 3;
+}
+
+message AuthManifestResponse {
+  string node_id = 1;
+  int64 manifest_started_at = 2;
+  bool full = 3;
+  repeated string users = 4;
+}
+
+message UserAuthSnapshotRequest {
+  string node_id = 1;
+  repeated string users = 2;
+}
+
+message UserAuthSnapshot {
+  string user_id = 1;
+  string op = 2;
+  string credential_id = 3;
+  string username = 4;
+  string password_hash = 5;
+  int64 expires_at_ms = 6;
+  int64 quota_limit_bytes = 7;
+  int64 last_known_global_usage_bytes = 8;
+  int64 quota_guard_overage_bytes = 9;
+}
+
+message UserAuthSnapshotResponse {
+  string node_id = 1;
+  repeated UserAuthSnapshot snapshots = 2;
+}
+
+message UsageBatch {
+  string batch_id = 1;
+  string node_id = 2;
+  int64 from_ms = 3;
+  int64 to_ms = 4;
+  repeated UsageRecord records = 5;
+}
+
+message UsageRecord {
+  string credential_id = 1;
+  int64 tx_bytes = 2;
+  int64 rx_bytes = 3;
+}
+
+message UsageAck {
+  string batch_id = 1;
+  bool ok = 2;
+}
+
+message Heartbeat {
+  string node_id = 1;
+  string agent_version = 2;
+  string protocol_version = 3;
+  string hysteria_service_status = 4;
+  int64 last_traffic_collection_ms = 5;
+  int64 last_online_collection_ms = 6;
+  int32 pending_usage_batch_count = 7;
+  int64 pending_usage_queue_size_bytes = 8;
+}
+
+message OnlineReport {
+  string node_id = 1;
+  int64 at_ms = 2;
+  repeated OnlineClient clients = 3;
+}
+
+message OnlineClient {
+  string credential_id = 1;
+  int32 count = 2;
+}
+
+message RuntimeCommand {
+  string id = 1;
+  string type = 2;
+  int64 issued_ms = 3;
+  int64 expires_ms = 4;
+  map<string, string> payload = 5;
+}
+
+message RuntimeCommandResult {
+  string command_id = 1;
+  string status = 2;
+  string message = 3;
+  string error = 4;
+}
+
+message AgentHello {
+  string node_id = 1;
+  string agent_version = 2;
+  string protocol_version = 3;
+}
+
+message AgentMessage {
+  string type = 1;
+  string request_id = 2;
+  AgentHello hello = 3;
+  Heartbeat heartbeat = 4;
+  OnlineReport online_report = 5;
+  UsageBatch usage_batch = 6;
+  RuntimeCommandResult runtime_command_result = 7;
+  AuthRefreshResult auth_refresh_result = 8;
+  AuthManifestRequest auth_manifest_request = 9;
+  UserAuthSnapshotRequest user_auth_snapshot_request = 10;
+}
+
+message ServerMessage {
+  string type = 1;
+  string request_id = 2;
+  AuthRefresh auth_refresh = 3;
+  RuntimeCommand runtime_command = 4;
+  UsageAck usage_ack = 5;
+  AuthManifestResponse auth_manifest_response = 6;
+  UserAuthSnapshotResponse user_auth_snapshot_response = 7;
+}
+
+message AuthRefresh {
+  string node_id = 1;
+  string account_id = 2;
+  string operation = 3;
+}
+
+message AuthRefreshResult {
+  string node_id = 1;
+  string account_id = 2;
+  string status = 3;
+  string message = 4;
+  string error = 5;
+}

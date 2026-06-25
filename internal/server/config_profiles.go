@@ -1,6 +1,6 @@
 package server
 
-import "laz/internal/model"
+import "laz/internal/server/model"
 
 func (s *Server) listConfigProfiles() []model.ConfigProfile {
 	if s.store != nil {

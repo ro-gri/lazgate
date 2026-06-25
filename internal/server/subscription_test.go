@@ -10,12 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	"laz/internal/model"
-	commontokens "laz/internal/security/tokens"
-	"laz/internal/services/connections"
-	subscriptionssvc "laz/internal/services/subscriptions"
-	"laz/internal/storage"
-	clientapi "laz/internal/transport/http/client"
+	"laz/internal/server/connections"
+	"laz/internal/server/model"
+	commontokens "laz/internal/server/security/tokens"
+	"laz/internal/server/storage"
+	subscriptionssvc "laz/internal/server/subscriptions"
+	clientapi "laz/internal/server/transport/http/client"
 )
 
 func TestRoutesDisallowRobots(t *testing.T) {

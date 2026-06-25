@@ -1,7 +1,7 @@
 package server
 
 import (
-	clientapp "laz/internal/transport/http/client"
+	clientapp "laz/internal/server/transport/http/client"
 
 	"github.com/go-chi/chi/v5"
 )

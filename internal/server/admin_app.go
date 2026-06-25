@@ -3,7 +3,8 @@ package server
 import (
 	"net/http"
 
-	adminapp "laz/internal/transport/http/admin"
+	"laz/internal/server/dashboard"
+	adminapp "laz/internal/server/transport/http/admin"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -17,7 +18,9 @@ func (s *Server) AdminApp() *AdminApp {
 		Store:       s.store,
 		Accounts:    s.accounts,
 		Connections: s.connections,
+		NodeInstall: s.nodeInstall,
 		Audit:       s.audit,
+		Dashboard:   dashboard.New(s.store),
 		AdminAuth:   s.adminAuth,
 		WebPrefix:   s.webPrefix,
 		AppName:     s.appName,

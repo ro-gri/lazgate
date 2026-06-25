@@ -68,34 +68,44 @@ LAZ_DATABASE_URL=postgres://laz:secret@127.0.0.1:5432/laz?sslmode=disable
 ```
 
 SQLite and PostgreSQL use the same embedded goose SQL migrations in
-`internal/storage/migrations/sql`.
+`internal/server/storage/migrations/sql`.
 The schema intentionally avoids database triggers and stored functions; rules
 such as client-bound short links are enforced in the application store layer.
 
-Code is split into server, transport, service, model, integration, and storage
-boundaries:
+Code is split into a server subtree and an agent subtree:
 
-- `internal/server` wires storage, services, HTTP transports, and routes.
-- `internal/transport/http` contains admin, client, and public HTTP handlers.
-- `internal/services` contains business workflows such as accounts,
-  connections, auth, audit, subscriptions, and client tokens.
-- `internal/model` contains shared business entities.
-- `internal/integrations` contains low-level VPN server/panel adapters.
-- `internal/storage` owns persistence implementations and migrations.
-- `internal/storage/record` is the home for persisted record shapes; records
-  currently mirror business models but are distinct storage types.
-- service packages depend on narrow local store/provider interfaces where
+- `internal/server` owns server-side workflows, storage, model, integrations,
+  HTTP transports, web assets, config, and security helpers.
+- `internal/server/transport/http` contains admin, client, and public HTTP
+  handlers.
+- `internal/server/model` contains server business entities.
+- `internal/server/integrations` contains low-level VPN server/panel adapters.
+- `internal/agent` contains the host-side LazGate Agent runtime.
+- `internal/server/storage` owns server persistence implementations and
+  migrations.
+- `internal/server/storage/record` is the home for persisted record shapes;
+  records currently mirror business models but are distinct storage types.
+- server packages depend on narrow local store/provider interfaces where
   practical instead of the full storage API.
 
 ## Development
 
 Storage record and HTTP view DTO conversions are generated with goverter.
-After changing model, record, or view structs, run:
+Agent/server control messages are generated from `proto/agentcontrol.proto`
+with `protoc`, `protoc-gen-go`, and `protoc-gen-go-grpc`.
+
+On macOS:
 
 ```sh
-go generate ./...
-go test ./...
-go vet ./...
+brew install protobuf
+go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+```
+
+After changing protobuf, model, record, or view structs, run:
+
+```sh
+make check
 ```
 
 All `/api/v1/*` admin endpoints require either a browser admin session or:
@@ -565,5 +575,5 @@ audit_logs
 PostgreSQL integration tests are opt-in and require a disposable database:
 
 ```sh
-LAZ_TEST_POSTGRES_URL=postgres://laz:secret@127.0.0.1:5432/laz_test?sslmode=disable go test ./internal/storage
+LAZ_TEST_POSTGRES_URL=postgres://laz:secret@127.0.0.1:5432/laz_test?sslmode=disable go test ./internal/server/storage
 ```

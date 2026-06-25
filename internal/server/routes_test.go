@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"laz/internal/model"
-	adminauthsvc "laz/internal/services/adminauth"
-	"laz/internal/storage"
+	adminauthsvc "laz/internal/server/adminauth"
+	"laz/internal/server/model"
+	"laz/internal/server/storage"
 )
 
 func TestAdminRoutePrefixServesLoginAndAssets(t *testing.T) {

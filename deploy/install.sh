@@ -171,6 +171,17 @@ fetch "$COMPOSE_URL" "$INSTALL_DIR/docker-compose.yml"
 fetch "$CADDYFILE_URL" "$INSTALL_DIR/Caddyfile"
 fetch "$BLANK_URL" "$INSTALL_DIR/blank.html"
 
+if [ ! -f "$INSTALL_DIR/keys/agent-grpc.crt" ] || [ ! -f "$INSTALL_DIR/keys/agent-grpc.key" ] || [ "$FORCE" = "1" ]; then
+  openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
+    -subj "/CN=${DOMAIN}" \
+    -addext "subjectAltName=DNS:${DOMAIN}" \
+    -keyout "$INSTALL_DIR/keys/agent-grpc.key" \
+    -out "$INSTALL_DIR/keys/agent-grpc.crt" >/dev/null 2>&1
+fi
+chown 10001:10001 "$INSTALL_DIR/keys/agent-grpc.crt" "$INSTALL_DIR/keys/agent-grpc.key"
+chmod 644 "$INSTALL_DIR/keys/agent-grpc.crt"
+chmod 600 "$INSTALL_DIR/keys/agent-grpc.key"
+
 umask 077
 cat > "$INSTALL_DIR/.env" <<EOF
 LAZ_IMAGE=${IMAGE}
@@ -185,6 +196,9 @@ LAZ_ADMIN_TOKEN=${ADMIN_TOKEN}
 LAZ_WEB_PREFIX=${WEB_PREFIX}
 LAZ_SECRET_KEY=${SECRET_KEY}
 LAZ_BLANK_PAGE_PATH=/app/blank.html
+LAZ_AGENT_GRPC_ADDR=0.0.0.0:9443
+LAZ_AGENT_GRPC_CERT_FILE=/app/keys/agent-grpc.crt
+LAZ_AGENT_GRPC_KEY_FILE=/app/keys/agent-grpc.key
 EOF
 
 chmod 600 "$INSTALL_DIR/.env"

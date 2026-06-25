@@ -10,6 +10,8 @@ services:
       - ./blank.html:/app/blank.html:ro
     expose:
       - "8088"
+    ports:
+      - "9443:9443"
     networks:
       - lazgate
 

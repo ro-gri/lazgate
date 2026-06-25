@@ -1,14 +1,21 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 
-	"laz/internal/config"
+	"laz/internal/nodeproto"
 	"laz/internal/server"
-	"laz/internal/storage"
+	"laz/internal/server/config"
+	"laz/internal/server/storage"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 func main() {
@@ -31,6 +38,13 @@ func main() {
 	srv := server.NewServer(st, cfg.AdminToken, cfg.PublicBaseURL, cfg.WebPrefix)
 	srv.SetAdminAuth(cfg.AdminToken, cfg.AdminTokenSHA256)
 	srv.SetAppName(cfg.Name)
+	if cfg.AgentGRPCCertFile != "" {
+		raw, err := os.ReadFile(cfg.AgentGRPCCertFile)
+		if err != nil {
+			log.Fatalf("read agent grpc cert: %v", err)
+		}
+		srv.SetProvisioningAgentServerCertPEM(string(raw))
+	}
 	if cfg.BlankPagePath != "" {
 		raw, err := os.ReadFile(cfg.BlankPagePath)
 		if err != nil {
@@ -38,11 +52,54 @@ func main() {
 		}
 		srv.SetBlankPageHTML(string(raw))
 	}
+	if cfg.AgentGRPCAddr != "" {
+		go serveAgentGRPC(cfg, srv)
+	}
 
 	log.Printf("laz listening on %s", cfg.Addr)
 	if err := http.ListenAndServe(cfg.Addr, srv.Routes()); err != nil {
 		log.Fatalf("listen: %v", err)
 	}
+}
+
+func serveAgentGRPC(cfg config.Config, srv *server.Server) {
+	tlsConfig, err := agentGRPCTLSConfig(cfg)
+	if err != nil {
+		log.Fatalf("agent grpc tls config: %v", err)
+	}
+	listener, err := net.Listen("tcp", cfg.AgentGRPCAddr)
+	if err != nil {
+		log.Fatalf("agent grpc listen: %v", err)
+	}
+	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsConfig)))
+	nodeproto.RegisterAgentControlServer(grpcServer, srv.AgentControl())
+	log.Printf("laz agent grpc listening on %s", cfg.AgentGRPCAddr)
+	if err := grpcServer.Serve(listener); err != nil {
+		log.Fatalf("agent grpc serve: %v", err)
+	}
+}
+
+func agentGRPCTLSConfig(cfg config.Config) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(cfg.AgentGRPCCertFile, cfg.AgentGRPCKeyFile)
+	if err != nil {
+		return nil, err
+	}
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{cert}}
+	if cfg.AgentGRPCCAFile != "" {
+		caRaw, err := os.ReadFile(cfg.AgentGRPCCAFile)
+		if err != nil {
+			return nil, err
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caRaw) {
+			return nil, os.ErrInvalid
+		}
+		tlsConfig.ClientCAs = pool
+		tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
+	} else {
+		tlsConfig.ClientAuth = tls.RequireAnyClientCert
+	}
+	return tlsConfig, nil
 }
 
 func openStore(cfg config.Config) (store.Store, error) {

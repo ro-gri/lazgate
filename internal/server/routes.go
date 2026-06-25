@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"os"
 
-	publicapp "laz/internal/transport/http/public"
-	webui "laz/internal/web"
+	publicapp "laz/internal/server/transport/http/public"
+	webui "laz/internal/server/web"
 
 	"github.com/go-chi/chi/v5"
 )
