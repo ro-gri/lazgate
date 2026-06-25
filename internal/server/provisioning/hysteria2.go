@@ -502,7 +502,12 @@ fi
 sudo tee /etc/hysteria/config.yaml >/dev/null <<'EOF_CONFIG'
 %s
 EOF_CONFIG
-sudo chmod 600 /etc/hysteria/config.yaml`, config)
+if id hysteria >/dev/null 2>&1; then
+  sudo chown hysteria:hysteria /etc/hysteria/config.yaml
+  sudo chmod 600 /etc/hysteria/config.yaml
+else
+  sudo chmod 644 /etc/hysteria/config.yaml
+fi`, config)
 	if _, err := runSSH(ctx, conn, script); err != nil {
 		r.fail("Writing Hysteria2 config", err)
 		return "", r.safeError(err)
@@ -638,7 +643,7 @@ func (r *runner) verify(ctx context.Context, conn *ssh.Client, serviceName strin
 	r.start("Verifying service")
 	script := "sudo systemctl is-active --quiet " + shellQuote(serviceName) + " && test -s /etc/hysteria/config.yaml && hysteria version >/dev/null 2>&1"
 	if r.input.TrafficStatsEnabled {
-		script += " && grep -q " + shellQuote("listen: "+r.input.TrafficStatsListen) + " /etc/hysteria/config.yaml"
+		script += " && sudo grep -q " + shellQuote("listen: "+r.input.TrafficStatsListen) + " /etc/hysteria/config.yaml"
 	}
 	if _, err := runSSH(ctx, conn, script); err != nil {
 		logs, _ := runSSH(ctx, conn, "sudo journalctl -u "+shellQuote(serviceName)+" -n 40 --no-pager")
