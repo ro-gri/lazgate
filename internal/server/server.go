@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	transportstore "laz/internal/nodeproto/transport"
 	"laz/internal/server/accounts"
 	adminauthsvc "laz/internal/server/adminauth"
 	"laz/internal/server/agentcontrol"
@@ -36,8 +37,12 @@ type Server struct {
 }
 
 func NewServer(st store.Store, adminToken string, publicBaseURL string, webPrefix string) *Server {
+	return NewServerWithTransport(st, transportstore.NopStore{}, adminToken, publicBaseURL, webPrefix)
+}
+
+func NewServerWithTransport(st store.Store, transport transportstore.Store, adminToken string, publicBaseURL string, webPrefix string) *Server {
 	connectionService := connections.New(st, commontokens.New)
-	agentControl := agentcontrol.NewHub(st)
+	agentControl := agentcontrol.NewHub(st, transport)
 	connectionService.SetAgentControl(agentControl)
 	server := &Server{
 		store:         st,

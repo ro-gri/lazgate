@@ -1,15 +1,20 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"laz/internal/nodeproto"
+	transportstore "laz/internal/nodeproto/transport"
 	"laz/internal/server"
 	"laz/internal/server/config"
 	"laz/internal/server/storage"
@@ -34,8 +39,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("open store: %v", err)
 	}
+	transport, err := openTransportStore(cfg)
+	if err != nil {
+		log.Fatalf("open transport store: %v", err)
+	}
+	defer transport.Close()
 
-	srv := server.NewServer(st, cfg.AdminToken, cfg.PublicBaseURL, cfg.WebPrefix)
+	srv := server.NewServerWithTransport(st, transport, cfg.AdminToken, cfg.PublicBaseURL, cfg.WebPrefix)
 	srv.SetAdminAuth(cfg.AdminToken, cfg.AdminTokenSHA256)
 	srv.SetAppName(cfg.Name)
 	if cfg.AgentGRPCCertFile != "" {
@@ -56,10 +66,39 @@ func main() {
 		go serveAgentGRPC(cfg, srv)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go cleanupTransport(ctx, transport)
+
 	log.Printf("laz listening on %s", cfg.Addr)
 	if err := http.ListenAndServe(cfg.Addr, srv.Routes()); err != nil {
 		log.Fatalf("listen: %v", err)
 	}
+}
+
+func cleanupTransport(ctx context.Context, transport transportstore.Store) {
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	for {
+		_ = transport.Cleanup(ctx, transportstore.DefaultCleanupPolicy())
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func openTransportStore(cfg config.Config) (transportstore.Store, error) {
+	path := cfg.TransportDataPath
+	if path == "" {
+		if cfg.DataPath != "" {
+			path = filepath.Join(filepath.Dir(cfg.DataPath), "laz.transport.db")
+		} else {
+			path = "./data/laz.transport.db"
+		}
+	}
+	return transportstore.OpenSQLite(path)
 }
 
 func serveAgentGRPC(cfg config.Config, srv *server.Server) {

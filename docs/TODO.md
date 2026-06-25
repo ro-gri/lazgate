@@ -166,6 +166,8 @@ deployment, security, and documentation tasks.
 - Add a node operations guide: install native Hysteria2 node, attach existing
   Hysteria2 node, agent troubleshooting, traffic stats, runtime commands, and
   dashboard interpretation.
+- Document the agent transport inbox/outbox lifecycle, including auth refresh,
+  usage telemetry, deduplication, and TTL cleanup timings.
 - Add an operations guide: update, uninstall, backup, restore, troubleshooting.
 - Add a security guide.
 - Add a contributor guide section that explains licensing and CLA expectations.

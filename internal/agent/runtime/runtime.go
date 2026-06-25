@@ -46,14 +46,6 @@ func (e *Executor) Execute(ctx context.Context, cmd *nodeproto.RuntimeCommand) *
 		msg, err = e.logs(ctx)
 	case "DumpStreams":
 		msg, err = e.stats.DumpStreams(ctx)
-	case "KickClient":
-		credentialID := cmd.Payload["credential_id"]
-		if credentialID == "" {
-			err = errors.New("credential_id is required")
-		} else {
-			err = e.stats.Kick(ctx, credentialID)
-			msg = "kick requested"
-		}
 	case "ApplyHysteriaConfig":
 		msg, err = e.applyConfig(ctx, cmd.Payload["config"])
 	default:

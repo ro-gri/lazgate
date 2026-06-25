@@ -45,6 +45,7 @@ LAZ_ADDR=127.0.0.1:8088
 LAZ_NAME=Chamomile
 LAZ_STORAGE=sqlite
 LAZ_DATA=./data/laz.db
+LAZ_TRANSPORT_DATA=./data/laz.transport.db
 LAZ_DATABASE_URL=
 LAZ_SECRET_KEY=
 LAZ_ADMIN_TOKEN=change-me
@@ -58,6 +59,7 @@ Use SQLite:
 ```sh
 LAZ_STORAGE=sqlite
 LAZ_DATA=./data/laz.db
+LAZ_TRANSPORT_DATA=./data/laz.transport.db
 ```
 
 Use PostgreSQL:
@@ -81,6 +83,10 @@ Code is split into a server subtree and an agent subtree:
 - `internal/server/model` contains server business entities.
 - `internal/server/integrations` contains low-level VPN server/panel adapters.
 - `internal/agent` contains the host-side LazGate Agent runtime.
+- `internal/nodeproto/transport` contains the actor transport inbox/outbox
+  interface and SQLite implementation used by the server and agent for
+  delivery state, deduplication, and TTL cleanup. Main storage remains the
+  source of truth for accounts, clients, connections, configs, and usage data.
 - `internal/server/storage` owns server persistence implementations and
   migrations.
 - `internal/server/storage/record` is the home for persisted record shapes;

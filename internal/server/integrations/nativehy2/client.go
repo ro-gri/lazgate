@@ -73,9 +73,6 @@ func (c *client) ApplyConnection(ctx context.Context, input remote.ApplyInput) e
 	if err := c.agent.RefreshUserAuth(ctx, input.NodeID, input.AccountID, input.Operation); err != nil {
 		return err
 	}
-	if input.Operation == "hold" || input.Operation == "delete" {
-		_ = c.agent.KickClient(ctx, input.NodeID, input.ConnectionID)
-	}
 	return nil
 }
 

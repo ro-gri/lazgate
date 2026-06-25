@@ -172,6 +172,8 @@
 - Добавить node operations guide: install native Hysteria2 node, attach
   existing Hysteria2 node, agent troubleshooting, traffic stats, runtime
   commands и dashboard interpretation.
+- Документировать lifecycle agent transport inbox/outbox: auth refresh, usage
+  telemetry, deduplication и TTL cleanup timings.
 - Добавить operations guide: update, uninstall, backup, restore,
   troubleshooting.
 - Добавить security guide.

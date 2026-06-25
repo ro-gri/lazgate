@@ -13,17 +13,20 @@ import (
 	agentconfig "laz/internal/agent/config"
 	agentstore "laz/internal/agent/store"
 	"laz/internal/nodeproto"
+	transportstore "laz/internal/nodeproto/transport"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/proto"
 )
 
 type StreamClient struct {
-	cfg      agentconfig.Config
-	version  string
-	outgoing chan *nodeproto.AgentMessage
-	mu       sync.Mutex
-	pending  map[string]chan *nodeproto.ServerMessage
+	cfg       agentconfig.Config
+	version   string
+	outgoing  chan *nodeproto.AgentMessage
+	mu        sync.Mutex
+	pending   map[string]chan *nodeproto.ServerMessage
+	transport transportstore.Store
 }
 
 type StreamHandler struct {
@@ -31,12 +34,16 @@ type StreamHandler struct {
 	ExecuteCommand  func(context.Context, *nodeproto.RuntimeCommand) *nodeproto.RuntimeCommandResult
 }
 
-func NewStream(cfg agentconfig.Config, version string) *StreamClient {
+func NewStream(cfg agentconfig.Config, version string, transport transportstore.Store) *StreamClient {
+	if transport == nil {
+		transport = transportstore.NopStore{}
+	}
 	return &StreamClient{
-		cfg:      cfg,
-		version:  version,
-		outgoing: make(chan *nodeproto.AgentMessage, 128),
-		pending:  map[string]chan *nodeproto.ServerMessage{},
+		cfg:       cfg,
+		version:   version,
+		outgoing:  make(chan *nodeproto.AgentMessage, 128),
+		pending:   map[string]chan *nodeproto.ServerMessage{},
+		transport: transport,
 	}
 }
 
@@ -69,6 +76,7 @@ func (c *StreamClient) Run(ctx context.Context, handler StreamHandler) error {
 		return err
 	}
 	errc := make(chan error, 2)
+	incoming := make(chan *nodeproto.ServerMessage, 128)
 	go func() {
 		for {
 			select {
@@ -87,6 +95,18 @@ func (c *StreamClient) Run(ctx context.Context, handler StreamHandler) error {
 	}()
 	go func() {
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg := <-incoming:
+				if msg != nil {
+					c.handleServerMessage(ctx, handler, msg)
+				}
+			}
+		}
+	}()
+	go func() {
+		for {
 			msg, err := stream.Recv()
 			if err != nil {
 				errc <- err
@@ -95,8 +115,9 @@ func (c *StreamClient) Run(ctx context.Context, handler StreamHandler) error {
 			if c.routePending(msg) {
 				continue
 			}
-			if err := c.handleServerMessage(ctx, stream, handler, msg); err != nil {
-				errc <- err
+			select {
+			case incoming <- msg:
+			case <-ctx.Done():
 				return
 			}
 		}
@@ -229,10 +250,20 @@ func (c *StreamClient) routePending(msg *nodeproto.ServerMessage) bool {
 	return true
 }
 
-func (c *StreamClient) handleServerMessage(ctx context.Context, stream nodeproto.AgentControl_ConnectClient, handler StreamHandler, msg *nodeproto.ServerMessage) error {
+func (c *StreamClient) handleServerMessage(ctx context.Context, handler StreamHandler, msg *nodeproto.ServerMessage) {
+	if msg.GetRequestId() != "" {
+		processed, ok, err := c.transport.IsProcessed(ctx, c.cfg.NodeID, msg.GetRequestId())
+		if err == nil && ok {
+			c.sendProcessedResult(ctx, msg, processed)
+			return
+		}
+	}
 	switch msg.GetType() {
 	case "auth_refresh":
 		refresh := msg.GetAuthRefresh()
+		if refresh == nil {
+			return
+		}
 		result := &nodeproto.AuthRefreshResult{NodeId: c.cfg.NodeID, AccountId: refresh.GetAccountId(), Status: "ok"}
 		if handler.RefreshUserAuth != nil {
 			if err := handler.RefreshUserAuth(ctx, refresh); err != nil {
@@ -240,15 +271,51 @@ func (c *StreamClient) handleServerMessage(ctx context.Context, stream nodeproto
 				result.Error = err.Error()
 			}
 		}
-		return stream.Send(&nodeproto.AgentMessage{Type: "auth_refresh_result", RequestId: msg.GetRequestId(), AuthRefreshResult: result})
+		status := transportstore.StatusApplied
+		if result.Status != "ok" {
+			status = transportstore.StatusFailed
+		}
+		if msg.GetRequestId() != "" {
+			_ = c.transport.RecordProcessed(ctx, c.cfg.NodeID, msg.GetRequestId(), "auth_refresh", status, mustMarshalProto(result), result.GetError())
+		}
+		_ = c.send(ctx, &nodeproto.AgentMessage{Type: "auth_refresh_result", RequestId: msg.GetRequestId(), AuthRefreshResult: result})
 	case "runtime_command":
 		if handler.ExecuteCommand == nil {
-			return nil
+			return
+		}
+		if msg.GetRuntimeCommand() == nil {
+			return
 		}
 		result := handler.ExecuteCommand(ctx, msg.GetRuntimeCommand())
-		return stream.Send(&nodeproto.AgentMessage{Type: "runtime_command_result", RequestId: msg.GetRequestId(), RuntimeCommandResult: result})
+		status := transportstore.StatusApplied
+		if result.GetStatus() != "ok" && result.GetStatus() != "skipped" {
+			status = transportstore.StatusFailed
+		}
+		if msg.GetRequestId() != "" {
+			_ = c.transport.RecordProcessed(ctx, c.cfg.NodeID, msg.GetRequestId(), "runtime_command", status, mustMarshalProto(result), result.GetError())
+		}
+		_ = c.send(ctx, &nodeproto.AgentMessage{Type: "runtime_command_result", RequestId: msg.GetRequestId(), RuntimeCommandResult: result})
 	default:
-		return nil
+		return
+	}
+}
+
+func (c *StreamClient) sendProcessedResult(ctx context.Context, msg *nodeproto.ServerMessage, processed transportstore.ProcessedMessage) {
+	switch msg.GetType() {
+	case "auth_refresh":
+		result := &nodeproto.AuthRefreshResult{}
+		_ = unmarshalProto(processed.Result, result)
+		if result.Status == "" {
+			result = &nodeproto.AuthRefreshResult{NodeId: c.cfg.NodeID, AccountId: msg.GetAuthRefresh().GetAccountId(), Status: string(processed.Status), Error: processed.Error}
+		}
+		_ = c.send(ctx, &nodeproto.AgentMessage{Type: "auth_refresh_result", RequestId: msg.GetRequestId(), AuthRefreshResult: result})
+	case "runtime_command":
+		result := &nodeproto.RuntimeCommandResult{}
+		_ = unmarshalProto(processed.Result, result)
+		if result.Status == "" {
+			result = &nodeproto.RuntimeCommandResult{CommandId: msg.GetRuntimeCommand().GetId(), Status: string(processed.Status), Error: processed.Error}
+		}
+		_ = c.send(ctx, &nodeproto.AgentMessage{Type: "runtime_command_result", RequestId: msg.GetRequestId(), RuntimeCommandResult: result})
 	}
 }
 
@@ -268,4 +335,16 @@ func newRequestID() string {
 	var b [16]byte
 	_, _ = rand.Read(b[:])
 	return "req_" + hex.EncodeToString(b[:])
+}
+
+func mustMarshalProto(msg proto.Message) []byte {
+	raw, _ := proto.Marshal(msg)
+	return raw
+}
+
+func unmarshalProto(raw []byte, msg proto.Message) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	return proto.Unmarshal(raw, msg)
 }

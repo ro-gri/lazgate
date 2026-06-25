@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -15,6 +16,7 @@ type Config struct {
 	ServerURL       string    `yaml:"server_url" json:"server_url"`
 	AgentGRPCTarget string    `yaml:"agent_grpc_target" json:"agent_grpc_target"`
 	StatePath       string    `yaml:"state_path" json:"state_path"`
+	TransportPath   string    `yaml:"transport_path" json:"transport_path"`
 	MTLS            MTLS      `yaml:"mtls" json:"mtls"`
 	Hysteria2       Hysteria2 `yaml:"hysteria2" json:"hysteria2"`
 	Sync            Sync      `yaml:"sync" json:"sync"`
@@ -75,6 +77,10 @@ func WithDefaults(cfg Config) Config {
 	cfg.StatePath = strings.TrimSpace(cfg.StatePath)
 	if cfg.StatePath == "" {
 		cfg.StatePath = "/var/lib/lazgate-agent/state.db"
+	}
+	cfg.TransportPath = strings.TrimSpace(cfg.TransportPath)
+	if cfg.TransportPath == "" {
+		cfg.TransportPath = filepath.Join(filepath.Dir(cfg.StatePath), "transport.db")
 	}
 	if strings.TrimSpace(cfg.Hysteria2.AuthListen) == "" {
 		cfg.Hysteria2.AuthListen = "127.0.0.1:28262"

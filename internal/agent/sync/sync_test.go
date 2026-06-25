@@ -41,7 +41,13 @@ func (m *memoryStore) DeleteAuthUser(_ context.Context, id string) error {
 	delete(m.users, id)
 	return nil
 }
-func (m *memoryStore) ListAuthUsers(context.Context) ([]agentstore.AuthUser, error) { return nil, nil }
+func (m *memoryStore) ListAuthUsers(context.Context) ([]agentstore.AuthUser, error) {
+	out := make([]agentstore.AuthUser, 0, len(m.users))
+	for _, user := range m.users {
+		out = append(out, user)
+	}
+	return out, nil
+}
 func (m *memoryStore) ApplyFullAuthSnapshot(_ context.Context, keep map[string]agentstore.AuthUser, cursorMS int64) error {
 	if m.failApply {
 		return errors.New("apply failed")
@@ -56,8 +62,34 @@ type fakeClient struct {
 	snapshots *nodeproto.UserAuthSnapshotResponse
 }
 
+type fakeKicker struct {
+	credentials []string
+}
+
+func (f *fakeKicker) Kick(_ context.Context, credentialID string) error {
+	f.credentials = append(f.credentials, credentialID)
+	return nil
+}
+
 func (f fakeClient) AuthManifest(context.Context, int64, bool) (*nodeproto.AuthManifestResponse, error) {
 	return f.manifest, nil
+}
+
+func TestApplySnapshotsKicksRemovedCredential(t *testing.T) {
+	st := &memoryStore{
+		state: map[string]string{},
+		users: map[string]agentstore.AuthUser{
+			"usr_1": {UserID: "usr_1", CredentialID: "cred_1", Username: "alice"},
+		},
+	}
+	kicker := &fakeKicker{}
+	err := New(st, fakeClient{}, kicker).ApplySnapshots(context.Background(), []*nodeproto.UserAuthSnapshot{{UserId: "usr_1", Op: "delete_from_auth"}}, 200, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(kicker.credentials) != 1 || kicker.credentials[0] != "cred_1" {
+		t.Fatalf("expected cred_1 kick, got %#v", kicker.credentials)
+	}
 }
 func (f fakeClient) AuthSnapshots(context.Context, []string) (*nodeproto.UserAuthSnapshotResponse, error) {
 	return f.snapshots, nil

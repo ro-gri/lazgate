@@ -15,30 +15,38 @@ import (
 	"time"
 
 	"laz/internal/nodeproto"
+	transportstore "laz/internal/nodeproto/transport"
 	"laz/internal/server/integrations/nativehy2"
 	"laz/internal/server/model"
 
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/protobuf/proto"
 )
 
 type Hub struct {
 	nodeproto.UnimplementedAgentControlServer
-	store Store
-	mu    sync.RWMutex
-	nodes map[string]*streamNode
+	store     Store
+	transport transportstore.Store
+	mu        sync.RWMutex
+	nodes     map[string]*streamNode
 }
 
 type streamNode struct {
-	nodeID  string
-	send    chan *nodeproto.ServerMessage
-	pending map[string]chan *nodeproto.AgentMessage
-	mu      sync.Mutex
+	nodeID   string
+	send     chan *nodeproto.ServerMessage
+	incoming chan *nodeproto.AgentMessage
+	pending  map[string]chan *nodeproto.AgentMessage
+	mu       sync.Mutex
 }
 
-func NewHub(st Store) *Hub {
-	return &Hub{store: st, nodes: map[string]*streamNode{}}
+func NewHub(st Store, stores ...transportstore.Store) *Hub {
+	var transport transportstore.Store = transportstore.NopStore{}
+	if len(stores) > 0 && stores[0] != nil {
+		transport = stores[0]
+	}
+	return &Hub{store: st, transport: transport, nodes: map[string]*streamNode{}}
 }
 
 func (h *Hub) Connect(stream nodeproto.AgentControl_ConnectServer) error {
@@ -56,7 +64,7 @@ func (h *Hub) Connect(stream nodeproto.AgentControl_ConnectServer) error {
 	if err := h.verifyPinnedNodeCertificate(stream.Context(), nodeID); err != nil {
 		return err
 	}
-	node := &streamNode{nodeID: nodeID, send: make(chan *nodeproto.ServerMessage, 64), pending: map[string]chan *nodeproto.AgentMessage{}}
+	node := &streamNode{nodeID: nodeID, send: make(chan *nodeproto.ServerMessage, 64), incoming: make(chan *nodeproto.AgentMessage, 128), pending: map[string]chan *nodeproto.AgentMessage{}}
 	h.register(nodeID, node)
 	defer h.unregister(nodeID, node)
 
@@ -76,7 +84,23 @@ func (h *Hub) Connect(stream nodeproto.AgentControl_ConnectServer) error {
 				errc <- err
 				return
 			}
-			h.handleAgentMessage(node, msg)
+			select {
+			case node.incoming <- msg:
+			case <-stream.Context().Done():
+				return
+			}
+		}
+	}()
+	go func() {
+		for {
+			select {
+			case msg := <-node.incoming:
+				if msg != nil {
+					h.handleAgentMessage(node, msg)
+				}
+			case <-stream.Context().Done():
+				return
+			}
 		}
 	}()
 	err = <-errc
@@ -99,17 +123,31 @@ func (h *Hub) RefreshUserAuth(ctx context.Context, nodeID string, accountID stri
 			ManifestStartedAt: manifestStartedAt,
 		},
 	}
+	expiresAt := time.Now().UTC().Add(15 * time.Minute)
+	_ = h.transport.Enqueue(ctx, transportstore.Message{
+		ID:          msg.GetRequestId(),
+		ActorID:     nodeID,
+		Direction:   transportstore.DirectionOutbound,
+		Type:        "auth_refresh",
+		Payload:     mustMarshalProto(msg),
+		Status:      transportstore.StatusPending,
+		ExpiresAt:   expiresAt,
+		AvailableAt: time.Now().UTC(),
+	})
 	res, err := h.request(ctx, nodeID, msg)
 	if err != nil {
+		_ = h.transport.MarkFailed(ctx, msg.GetRequestId(), err.Error(), time.Now().UTC().Add(time.Minute))
 		return err
 	}
 	result := res.GetAuthRefreshResult()
 	if result.GetStatus() != "ok" {
+		_ = h.transport.MarkFailed(ctx, msg.GetRequestId(), result.GetError(), time.Now().UTC().Add(time.Minute))
 		if result.GetError() != "" {
 			return errors.New(result.GetError())
 		}
 		return fmt.Errorf("auth refresh status %s", result.GetStatus())
 	}
+	_ = h.transport.MarkApplied(ctx, msg.GetRequestId(), mustMarshalProto(result))
 	return nil
 }
 
@@ -122,29 +160,6 @@ func (h *Hub) authSnapshotsForAccount(nodeID, accountID string) []*nodeproto.Use
 	}
 	sort.Strings(users)
 	return h.authSnapshots(&nodeproto.UserAuthSnapshotRequest{NodeId: nodeID, Users: users}).GetSnapshots()
-}
-
-func (h *Hub) KickClient(ctx context.Context, nodeID string, credentialID string) error {
-	msg := &nodeproto.ServerMessage{
-		Type:      "runtime_command",
-		RequestId: newRequestID(),
-		RuntimeCommand: &nodeproto.RuntimeCommand{
-			Id:        newRequestID(),
-			Type:      "KickClient",
-			IssuedMs:  time.Now().UnixMilli(),
-			ExpiresMs: time.Now().Add(30 * time.Second).UnixMilli(),
-			Payload:   map[string]string{"credential_id": credentialID},
-		},
-	}
-	res, err := h.request(ctx, nodeID, msg)
-	if err != nil {
-		return err
-	}
-	result := res.GetRuntimeCommandResult()
-	if result.GetStatus() != "ok" && result.GetStatus() != "skipped" {
-		return errors.New(result.GetError())
-	}
-	return nil
 }
 
 func (h *Hub) request(ctx context.Context, nodeID string, msg *nodeproto.ServerMessage) (*nodeproto.AgentMessage, error) {
@@ -163,6 +178,9 @@ func (h *Hub) request(ctx context.Context, nodeID string, msg *nodeproto.ServerM
 	}()
 	select {
 	case node.send <- msg:
+		if msg.GetRequestId() != "" {
+			_ = h.transport.MarkSent(ctx, msg.GetRequestId())
+		}
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -174,6 +192,11 @@ func (h *Hub) request(ctx context.Context, nodeID string, msg *nodeproto.ServerM
 	case <-waitCtx.Done():
 		return nil, waitCtx.Err()
 	}
+}
+
+func mustMarshalProto(msg proto.Message) []byte {
+	raw, _ := proto.Marshal(msg)
+	return raw
 }
 
 func (h *Hub) handleAgentMessage(node *streamNode, msg *nodeproto.AgentMessage) {
@@ -201,10 +224,20 @@ func (h *Hub) handleAgentMessage(node *streamNode, msg *nodeproto.AgentMessage) 
 		if err == nil {
 			ok, err = h.store.CreateUsageBatch(batch, records)
 		}
+		ack := &nodeproto.UsageAck{BatchId: batch.BatchID, Ok: err == nil || ok}
+		status := transportstore.StatusApplied
+		errMsg := ""
+		if err != nil && !ok {
+			status = transportstore.StatusFailed
+			errMsg = err.Error()
+		}
+		if msg.GetRequestId() != "" {
+			_ = h.transport.RecordProcessed(context.Background(), node.nodeID, msg.GetRequestId(), "traffic_batch", status, mustMarshalProto(ack), errMsg)
+		}
 		node.send <- &nodeproto.ServerMessage{
 			Type:      "usage_ack",
 			RequestId: msg.GetRequestId(),
-			UsageAck:  &nodeproto.UsageAck{BatchId: batch.BatchID, Ok: err == nil || ok},
+			UsageAck:  ack,
 		}
 	}
 }

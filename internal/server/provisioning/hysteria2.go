@@ -875,6 +875,7 @@ func (r *runner) agentConfig(nodeID, serviceName, statsSecret string) string {
 server_url: %q
 agent_grpc_target: %q
 state_path: "/var/lib/lazgate-agent/state.db"
+transport_path: "/var/lib/lazgate-agent/transport.db"
 mtls:
 %s
   cert_file: "/etc/lazgate-agent/node.crt"

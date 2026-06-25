@@ -7,6 +7,7 @@ type Config struct {
 	Name              string `env:"LAZ_NAME" envDefault:"Chamomile"`
 	Storage           string `env:"LAZ_STORAGE" envDefault:"sqlite"`
 	DataPath          string `env:"LAZ_DATA" envDefault:"./data/laz.db"`
+	TransportDataPath string `env:"LAZ_TRANSPORT_DATA"`
 	DatabaseURL       string `env:"LAZ_DATABASE_URL"`
 	SecretKey         string `env:"LAZ_SECRET_KEY"`
 	AdminToken        string `env:"LAZ_ADMIN_TOKEN" envDefault:"change-me"`

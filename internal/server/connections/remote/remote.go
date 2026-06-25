@@ -16,7 +16,6 @@ type Provider interface {
 
 type AgentControl interface {
 	RefreshUserAuth(ctx context.Context, nodeID string, accountID string, operation string) error
-	KickClient(ctx context.Context, nodeID string, credentialID string) error
 }
 
 type CreateInput struct {

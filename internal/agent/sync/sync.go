@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"time"
 
 	agentstore "laz/internal/agent/store"
 	"laz/internal/nodeproto"
@@ -25,13 +26,22 @@ type Client interface {
 	AuthSnapshots(context.Context, []string) (*nodeproto.UserAuthSnapshotResponse, error)
 }
 
+type Kicker interface {
+	Kick(context.Context, string) error
+}
+
 type Syncer struct {
 	store  Store
 	client Client
+	kicker Kicker
 }
 
-func New(st Store, client Client) *Syncer {
-	return &Syncer{store: st, client: client}
+func New(st Store, client Client, kickers ...Kicker) *Syncer {
+	var kicker Kicker
+	if len(kickers) > 0 {
+		kicker = kickers[0]
+	}
+	return &Syncer{store: st, client: client, kicker: kicker}
 }
 
 func (s *Syncer) RunOnce(ctx context.Context, full bool) error {
@@ -58,30 +68,75 @@ func (s *Syncer) RunOnce(ctx context.Context, full bool) error {
 }
 
 func (s *Syncer) ApplySnapshots(ctx context.Context, snapshots []*nodeproto.UserAuthSnapshot, manifestStartedAt int64, full bool) error {
+	current, err := s.store.ListAuthUsers(ctx)
+	if err != nil {
+		return err
+	}
+	currentByUser := map[string]agentstore.AuthUser{}
+	for _, user := range current {
+		currentByUser[user.UserID] = user
+	}
+	toKick := map[string]bool{}
 	if full {
 		keep := map[string]agentstore.AuthUser{}
 		for _, snap := range snapshots {
 			if snap.GetOp() != "upsert" {
 				continue
 			}
-			keep[snap.GetUserId()] = toAuthUser(snap)
+			next := toAuthUser(snap)
+			keep[snap.GetUserId()] = next
+			if prev, ok := currentByUser[snap.GetUserId()]; ok && prev.CredentialID != "" && prev.CredentialID != next.CredentialID {
+				toKick[prev.CredentialID] = true
+			}
 		}
-		return s.store.ApplyFullAuthSnapshot(ctx, keep, manifestStartedAt)
+		for id, prev := range currentByUser {
+			if _, ok := keep[id]; !ok && prev.CredentialID != "" {
+				toKick[prev.CredentialID] = true
+			}
+		}
+		if err := s.store.ApplyFullAuthSnapshot(ctx, keep, manifestStartedAt); err != nil {
+			return err
+		}
+		return s.kickRemoved(ctx, toKick)
 	}
 	for _, snap := range snapshots {
 		switch snap.GetOp() {
 		case "upsert":
-			if err := s.store.UpsertAuthUser(ctx, toAuthUser(snap)); err != nil {
+			next := toAuthUser(snap)
+			if prev, ok := currentByUser[snap.GetUserId()]; ok && prev.CredentialID != "" && prev.CredentialID != next.CredentialID {
+				toKick[prev.CredentialID] = true
+			}
+			if err := s.store.UpsertAuthUser(ctx, next); err != nil {
 				return err
 			}
 		case "delete_from_auth":
+			if prev, ok := currentByUser[snap.GetUserId()]; ok && prev.CredentialID != "" {
+				toKick[prev.CredentialID] = true
+			}
 			if err := s.store.DeleteAuthUser(ctx, snap.GetUserId()); err != nil {
 				return err
 			}
 		}
 	}
 	if manifestStartedAt > 0 {
-		return s.store.SetState(ctx, cursorKey, strconv.FormatInt(manifestStartedAt, 10))
+		if err := s.store.SetState(ctx, cursorKey, strconv.FormatInt(manifestStartedAt, 10)); err != nil {
+			return err
+		}
+	}
+	return s.kickRemoved(ctx, toKick)
+}
+
+func (s *Syncer) kickRemoved(ctx context.Context, credentials map[string]bool) error {
+	if s.kicker == nil || len(credentials) == 0 {
+		return nil
+	}
+	for credentialID := range credentials {
+		kickCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err := s.kicker.Kick(kickCtx, credentialID)
+		cancel()
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -607,7 +607,7 @@ func usageRecordViews(items []model.UsageRecord) []map[string]any {
 
 func allowedRuntimeCommand(command string) bool {
 	switch command {
-	case "GetStatus", "RestartHysteria", "StartHysteria", "StopHysteria", "CollectLogs", "DumpStreams", "KickClient", "ApplyHysteriaConfig":
+	case "GetStatus", "RestartHysteria", "StartHysteria", "StopHysteria", "CollectLogs", "DumpStreams", "ApplyHysteriaConfig":
 		return true
 	default:
 		return false
