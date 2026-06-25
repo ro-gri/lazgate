@@ -25,5 +25,9 @@ func passwordFromHy2URI(raw string) string {
 	if password, ok := u.User.Password(); ok {
 		return password
 	}
-	return u.User.Username()
+	username := u.User.Username()
+	if _, password, ok := strings.Cut(username, ":"); ok {
+		return password
+	}
+	return username
 }

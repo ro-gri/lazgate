@@ -95,7 +95,7 @@ func TestHubAuthSnapshotUsesPasswordHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateIssuedConfig(model.IssuedConfig{ConnectionID: connection.ID, Kind: model.ConfigHy2URI, Slug: "hy2", Status: model.StatusActive, Config: "hy2://alice_phone:secret@example.com:443"}); err != nil {
+	if _, err := st.CreateIssuedConfig(model.IssuedConfig{ConnectionID: connection.ID, Kind: model.ConfigHy2URI, Slug: "hy2", Status: model.StatusActive, Config: "hy2://alice_phone%3Asecret@example.com:443"}); err != nil {
 		t.Fatal(err)
 	}
 	res := NewHub(st).authSnapshots(&nodeproto.UserAuthSnapshotRequest{NodeId: node.ID, Users: []string{connection.ID}})
@@ -108,6 +108,25 @@ func TestHubAuthSnapshotUsesPasswordHash(t *testing.T) {
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(snap.GetPasswordHash()), []byte("secret")); err != nil {
 		t.Fatalf("hash does not verify password: %v", err)
+	}
+}
+
+func TestPasswordFromHy2URI(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "encoded username password pair", raw: "hy2://alice_phone%3Asecret@example.com:443", want: "secret"},
+		{name: "standard userinfo password", raw: "hy2://alice_phone:secret@example.com:443", want: "secret"},
+		{name: "username only", raw: "hy2://secret@example.com:443", want: "secret"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := passwordFromHy2URI(tt.raw); got != tt.want {
+				t.Fatalf("passwordFromHy2URI() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
