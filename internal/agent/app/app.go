@@ -53,7 +53,10 @@ func Run(ctx context.Context, cfg agentconfig.Config, version string) error {
 	go func() {
 		for ctx.Err() == nil {
 			err := serverClient.Run(ctx, connect.StreamHandler{
-				RefreshUserAuth: func(runCtx context.Context, _ string, _ string) error {
+				RefreshUserAuth: func(runCtx context.Context, refresh *nodeproto.AuthRefresh) error {
+					if len(refresh.GetSnapshots()) > 0 {
+						return syncer.ApplySnapshots(runCtx, refresh.GetSnapshots(), refresh.GetManifestStartedAt(), false)
+					}
 					return syncer.RunOnce(runCtx, false)
 				},
 				ExecuteCommand: func(runCtx context.Context, command *nodeproto.RuntimeCommand) *nodeproto.RuntimeCommandResult {

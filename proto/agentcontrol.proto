@@ -132,6 +132,8 @@ message AuthRefresh {
   string node_id = 1;
   string account_id = 2;
   string operation = 3;
+  repeated UserAuthSnapshot snapshots = 4;
+  int64 manifest_started_at = 5;
 }
 
 message AuthRefreshResult {

@@ -1174,12 +1174,14 @@ func (x *ServerMessage) GetUserAuthSnapshotResponse() *UserAuthSnapshotResponse 
 }
 
 type AuthRefresh struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	AccountId     string                 `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	Operation     string                 `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	NodeId            string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	AccountId         string                 `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	Operation         string                 `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`
+	Snapshots         []*UserAuthSnapshot    `protobuf:"bytes,4,rep,name=snapshots,proto3" json:"snapshots,omitempty"`
+	ManifestStartedAt int64                  `protobuf:"varint,5,opt,name=manifest_started_at,json=manifestStartedAt,proto3" json:"manifest_started_at,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *AuthRefresh) Reset() {
@@ -1231,6 +1233,20 @@ func (x *AuthRefresh) GetOperation() string {
 		return x.Operation
 	}
 	return ""
+}
+
+func (x *AuthRefresh) GetSnapshots() []*UserAuthSnapshot {
+	if x != nil {
+		return x.Snapshots
+	}
+	return nil
+}
+
+func (x *AuthRefresh) GetManifestStartedAt() int64 {
+	if x != nil {
+		return x.ManifestStartedAt
+	}
+	return 0
 }
 
 type AuthRefreshResult struct {
@@ -1412,12 +1428,14 @@ const file_proto_agentcontrol_proto_rawDesc = "" +
 	"\x0fruntime_command\x18\x04 \x01(\v2\x1d.laz.nodeproto.RuntimeCommandR\x0eruntimeCommand\x124\n" +
 	"\tusage_ack\x18\x05 \x01(\v2\x17.laz.nodeproto.UsageAckR\busageAck\x12Y\n" +
 	"\x16auth_manifest_response\x18\x06 \x01(\v2#.laz.nodeproto.AuthManifestResponseR\x14authManifestResponse\x12f\n" +
-	"\x1buser_auth_snapshot_response\x18\a \x01(\v2'.laz.nodeproto.UserAuthSnapshotResponseR\x18userAuthSnapshotResponse\"c\n" +
+	"\x1buser_auth_snapshot_response\x18\a \x01(\v2'.laz.nodeproto.UserAuthSnapshotResponseR\x18userAuthSnapshotResponse\"\xd2\x01\n" +
 	"\vAuthRefresh\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x02 \x01(\tR\taccountId\x12\x1c\n" +
-	"\toperation\x18\x03 \x01(\tR\toperation\"\x93\x01\n" +
+	"\toperation\x18\x03 \x01(\tR\toperation\x12=\n" +
+	"\tsnapshots\x18\x04 \x03(\v2\x1f.laz.nodeproto.UserAuthSnapshotR\tsnapshots\x12.\n" +
+	"\x13manifest_started_at\x18\x05 \x01(\x03R\x11manifestStartedAt\"\x93\x01\n" +
 	"\x11AuthRefreshResult\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
 	"\n" +
@@ -1480,13 +1498,14 @@ var file_proto_agentcontrol_proto_depIdxs = []int32{
 	7,  // 14: laz.nodeproto.ServerMessage.usage_ack:type_name -> laz.nodeproto.UsageAck
 	1,  // 15: laz.nodeproto.ServerMessage.auth_manifest_response:type_name -> laz.nodeproto.AuthManifestResponse
 	4,  // 16: laz.nodeproto.ServerMessage.user_auth_snapshot_response:type_name -> laz.nodeproto.UserAuthSnapshotResponse
-	14, // 17: laz.nodeproto.AgentControl.Connect:input_type -> laz.nodeproto.AgentMessage
-	15, // 18: laz.nodeproto.AgentControl.Connect:output_type -> laz.nodeproto.ServerMessage
-	18, // [18:19] is the sub-list for method output_type
-	17, // [17:18] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	3,  // 17: laz.nodeproto.AuthRefresh.snapshots:type_name -> laz.nodeproto.UserAuthSnapshot
+	14, // 18: laz.nodeproto.AgentControl.Connect:input_type -> laz.nodeproto.AgentMessage
+	15, // 19: laz.nodeproto.AgentControl.Connect:output_type -> laz.nodeproto.ServerMessage
+	19, // [19:20] is the sub-list for method output_type
+	18, // [18:19] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_proto_agentcontrol_proto_init() }

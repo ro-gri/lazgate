@@ -27,7 +27,7 @@ type StreamClient struct {
 }
 
 type StreamHandler struct {
-	RefreshUserAuth func(context.Context, string, string) error
+	RefreshUserAuth func(context.Context, *nodeproto.AuthRefresh) error
 	ExecuteCommand  func(context.Context, *nodeproto.RuntimeCommand) *nodeproto.RuntimeCommandResult
 }
 
@@ -235,7 +235,7 @@ func (c *StreamClient) handleServerMessage(ctx context.Context, stream nodeproto
 		refresh := msg.GetAuthRefresh()
 		result := &nodeproto.AuthRefreshResult{NodeId: c.cfg.NodeID, AccountId: refresh.GetAccountId(), Status: "ok"}
 		if handler.RefreshUserAuth != nil {
-			if err := handler.RefreshUserAuth(ctx, refresh.GetAccountId(), refresh.GetOperation()); err != nil {
+			if err := handler.RefreshUserAuth(ctx, refresh); err != nil {
 				result.Status = "error"
 				result.Error = err.Error()
 			}

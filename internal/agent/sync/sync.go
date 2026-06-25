@@ -54,29 +54,36 @@ func (s *Syncer) RunOnce(ctx context.Context, full bool) error {
 	if err != nil {
 		return err
 	}
-	if manifest.Full {
+	return s.ApplySnapshots(ctx, snapshots.Snapshots, manifest.ManifestStartedAt, manifest.Full)
+}
+
+func (s *Syncer) ApplySnapshots(ctx context.Context, snapshots []*nodeproto.UserAuthSnapshot, manifestStartedAt int64, full bool) error {
+	if full {
 		keep := map[string]agentstore.AuthUser{}
-		for _, snap := range snapshots.Snapshots {
-			if snap.Op != "upsert" {
+		for _, snap := range snapshots {
+			if snap.GetOp() != "upsert" {
 				continue
 			}
-			keep[snap.UserId] = toAuthUser(snap)
+			keep[snap.GetUserId()] = toAuthUser(snap)
 		}
-		return s.store.ApplyFullAuthSnapshot(ctx, keep, manifest.ManifestStartedAt)
+		return s.store.ApplyFullAuthSnapshot(ctx, keep, manifestStartedAt)
 	}
-	for _, snap := range snapshots.Snapshots {
-		switch snap.Op {
+	for _, snap := range snapshots {
+		switch snap.GetOp() {
 		case "upsert":
 			if err := s.store.UpsertAuthUser(ctx, toAuthUser(snap)); err != nil {
 				return err
 			}
 		case "delete_from_auth":
-			if err := s.store.DeleteAuthUser(ctx, snap.UserId); err != nil {
+			if err := s.store.DeleteAuthUser(ctx, snap.GetUserId()); err != nil {
 				return err
 			}
 		}
 	}
-	return s.store.SetState(ctx, cursorKey, strconv.FormatInt(manifest.ManifestStartedAt, 10))
+	if manifestStartedAt > 0 {
+		return s.store.SetState(ctx, cursorKey, strconv.FormatInt(manifestStartedAt, 10))
+	}
+	return nil
 }
 
 func toAuthUser(snap *nodeproto.UserAuthSnapshot) agentstore.AuthUser {

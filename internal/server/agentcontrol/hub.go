@@ -87,13 +87,16 @@ func (h *Hub) Connect(stream nodeproto.AgentControl_ConnectServer) error {
 }
 
 func (h *Hub) RefreshUserAuth(ctx context.Context, nodeID string, accountID string, operation string) error {
+	manifestStartedAt := time.Now().UnixMilli()
 	msg := &nodeproto.ServerMessage{
 		Type:      "auth_refresh",
 		RequestId: newRequestID(),
 		AuthRefresh: &nodeproto.AuthRefresh{
-			NodeId:    nodeID,
-			AccountId: accountID,
-			Operation: operation,
+			NodeId:            nodeID,
+			AccountId:         accountID,
+			Operation:         operation,
+			Snapshots:         h.authSnapshotsForAccount(nodeID, accountID),
+			ManifestStartedAt: manifestStartedAt,
 		},
 	}
 	res, err := h.request(ctx, nodeID, msg)
@@ -108,6 +111,17 @@ func (h *Hub) RefreshUserAuth(ctx context.Context, nodeID string, accountID stri
 		return fmt.Errorf("auth refresh status %s", result.GetStatus())
 	}
 	return nil
+}
+
+func (h *Hub) authSnapshotsForAccount(nodeID, accountID string) []*nodeproto.UserAuthSnapshot {
+	var users []string
+	for _, c := range h.store.ListConnections() {
+		if c.NodeID == nodeID && c.AccountID == accountID {
+			users = append(users, c.ID)
+		}
+	}
+	sort.Strings(users)
+	return h.authSnapshots(&nodeproto.UserAuthSnapshotRequest{NodeId: nodeID, Users: users}).GetSnapshots()
 }
 
 func (h *Hub) KickClient(ctx context.Context, nodeID string, credentialID string) error {
