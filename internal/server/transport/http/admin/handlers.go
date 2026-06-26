@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -174,6 +175,14 @@ func (a *App) accountsHandler(w http.ResponseWriter, r *http.Request) {
 			EntityID:   u.ID,
 			Details:    map[string]any{"username": u.Username, "display_name": u.DisplayName},
 		})
+		a.publish(r.Context(), model.Event{
+			Type:        "account.created",
+			EntityType:  "account",
+			EntityID:    u.ID,
+			Actor:       "admin",
+			Message:     "Аккаунт создан.",
+			PayloadJSON: jsonString(map[string]any{"account": adminview.AccountItem(u)}),
+		})
 		httpx.JSON(w, http.StatusCreated, adminview.AccountItem(u))
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -303,6 +312,14 @@ func (a *App) enrollments(w http.ResponseWriter, r *http.Request) {
 			"partial":            enrollment.Partial,
 		},
 	})
+	a.publish(r.Context(), model.Event{
+		Type:        "account.enrolled",
+		EntityType:  "account",
+		EntityID:    enrollment.Account.ID,
+		Actor:       "admin",
+		Message:     "Аккаунт и подключения созданы.",
+		PayloadJSON: jsonString(map[string]any{"account": adminview.AccountItem(enrollment.Account), "client": adminview.ClientItem(enrollment.Client), "partial": enrollment.Partial}),
+	})
 
 	status := http.StatusCreated
 	if enrollment.Partial {
@@ -412,38 +429,163 @@ func (a *App) hysteria2NodeProvision(w http.ResponseWriter, r *http.Request, mod
 		httpx.Error(w, http.StatusBadRequest, "node installer is not configured")
 		return
 	}
+	operation, steps, err := a.createHysteriaOperation(mode, input)
+	if err != nil {
+		httpx.PrivateError(w, http.StatusInternalServerError, "internal error", err)
+		return
+	}
+	a.publish(r.Context(), model.Event{
+		Type:        "operation.created",
+		EntityType:  "operation",
+		EntityID:    operation.ID,
+		Actor:       "admin",
+		Message:     "Hysteria2 VPS installation scheduled.",
+		PayloadJSON: jsonString(map[string]any{"operation": operationItem(operation), "steps": operationStepItems(steps)}),
+	})
+	go a.runHysteriaOperation(operation, steps, mode, input)
+	httpx.JSON(w, http.StatusAccepted, map[string]any{
+		"operation": operationItem(operation),
+		"steps":     operationStepItems(steps),
+		"logs":      []string{"Installation request accepted."},
+	})
+}
+
+func (a *App) createHysteriaOperation(mode string, input provisioningsvc.Hysteria2Input) (model.Operation, []model.OperationStep, error) {
+	opType := "hysteria2.install"
+	summary := "Install Hysteria2 VPS"
+	if mode == "attach" {
+		opType = "hysteria2.attach"
+		summary = "Attach Hysteria2 VPS"
+	}
+	operation, err := a.store.CreateOperation(model.Operation{
+		Type:      opType,
+		Status:    operationRunning,
+		Summary:   summary,
+		InputJSON: jsonString(redactedHysteriaInput(input)),
+	})
+	if err != nil {
+		return model.Operation{}, nil, err
+	}
+	initial := provisioningsvc.InitialSteps(mode == "attach")
+	steps := make([]model.OperationStep, 0, len(initial))
+	for i, step := range initial {
+		created, err := a.store.CreateOperationStep(model.OperationStep{
+			OperationID: operation.ID,
+			Seq:         i + 1,
+			Name:        step.Name,
+			Type:        "hysteria2.step",
+			Status:      stepStatus(step.Status),
+			InputJSON:   "{}",
+			ResultJSON:  "{}",
+		})
+		if err != nil {
+			return model.Operation{}, nil, err
+		}
+		steps = append(steps, created)
+	}
+	return operation, steps, nil
+}
+
+func (a *App) runHysteriaOperation(operation model.Operation, steps []model.OperationStep, mode string, input provisioningsvc.Hysteria2Input) {
+	ctx := context.Background()
+	stepByName := map[string]model.OperationStep{}
+	for _, step := range steps {
+		stepByName[step.Name] = step
+	}
+	input.Progress = func(progress provisioningsvc.Step) {
+		step := stepByName[progress.Name]
+		if step.ID == "" {
+			return
+		}
+		step.Status = stepStatus(progress.Status)
+		step.Message = progress.Message
+		step.StartedAt = progress.StartedAt
+		step.CompletedAt = progress.EndedAt
+		updated, err := a.store.UpdateOperationStep(step)
+		if err == nil {
+			stepByName[progress.Name] = updated
+		}
+		currentSteps := a.store.ListOperationSteps(operation.ID)
+		a.publish(ctx, model.Event{
+			Type:        "operation.step",
+			EntityType:  "operation",
+			EntityID:    operation.ID,
+			Actor:       "admin",
+			Message:     progress.Name + ": " + string(progress.Status),
+			PayloadJSON: jsonString(map[string]any{"operation": operationItem(operation), "steps": operationStepItems(currentSteps)}),
+		})
+	}
 	var result provisioningsvc.Result
 	var err error
 	if mode == "attach" {
-		result, err = a.nodeInstall.AttachHysteria2(r.Context(), input)
+		result, err = a.nodeInstall.AttachHysteria2(ctx, input)
 	} else {
-		result, err = a.nodeInstall.InstallHysteria2(r.Context(), input)
+		result, err = a.nodeInstall.InstallHysteria2(ctx, input)
 	}
 	if err != nil {
-		httpx.JSON(w, http.StatusBadGateway, map[string]any{
-			"error":      "hysteria2 provisioning failed",
+		operation.Status = model.StatusError
+		operation.Error = "hysteria2 provisioning failed"
+		operation.ResultJSON = jsonString(map[string]any{
 			"error_id":   httpx.LogError(http.StatusBadGateway, err),
-			"steps":      result.Steps,
-			"logs":       result.Logs,
 			"retry_safe": result.RetrySafe,
+		})
+		operation, _ = a.store.UpdateOperation(operation)
+		a.publish(ctx, model.Event{
+			Type:        "operation.failed",
+			EntityType:  "operation",
+			EntityID:    operation.ID,
+			Actor:       "admin",
+			Message:     "Hysteria2 VPS installation failed.",
+			PayloadJSON: jsonString(map[string]any{"operation": operationItem(operation), "steps": operationStepItems(a.store.ListOperationSteps(operation.ID))}),
 		})
 		return
 	}
-	a.recordAudit(r, auditsvc.Event{
-		Action:     "nodes." + mode + "_hysteria2",
-		EntityType: "node",
-		EntityID:   result.Node.ID,
-		Details:    map[string]any{"name": result.Node.Name, "domain": result.PublicDomain, "port": result.HysteriaPort},
-	})
-	httpx.JSON(w, http.StatusCreated, map[string]any{
+	operation.Status = operationDone
+	operation.EntityType = "node"
+	operation.EntityID = result.Node.ID
+	operation.ResultJSON = jsonString(map[string]any{
 		"node":             adminview.NodeItem(result.Node),
 		"public_domain":    result.PublicDomain,
 		"hysteria_port":    result.HysteriaPort,
 		"service_name":     result.ServiceName,
 		"generated_domain": result.GeneratedDomain,
-		"steps":            result.Steps,
-		"logs":             result.Logs,
 	})
+	operation, _ = a.store.UpdateOperation(operation)
+	a.recordSystemAudit(auditsvc.Event{
+		Action:     "nodes." + mode + "_hysteria2",
+		EntityType: "node",
+		EntityID:   result.Node.ID,
+		Details:    map[string]any{"name": result.Node.Name, "domain": result.PublicDomain, "port": result.HysteriaPort},
+	})
+	a.publish(ctx, model.Event{
+		Type:        "node.created",
+		EntityType:  "node",
+		EntityID:    result.Node.ID,
+		Actor:       "admin",
+		Message:     "Hysteria2 VPS node is ready.",
+		PayloadJSON: jsonString(map[string]any{"operation": operationItem(operation), "steps": operationStepItems(a.store.ListOperationSteps(operation.ID)), "node": adminview.NodeItem(result.Node)}),
+	})
+}
+
+func redactedHysteriaInput(input provisioningsvc.Hysteria2Input) map[string]any {
+	return map[string]any{
+		"ssh_host":              input.SSHHost,
+		"ssh_port":              input.SSHPort,
+		"bootstrap_user":        input.BootstrapUser,
+		"node_name":             input.NodeName,
+		"public_domain":         input.PublicDomain,
+		"hysteria_port":         input.HysteriaPort,
+		"masquerade_url":        input.MasqueradeURL,
+		"install_version":       input.InstallVersion,
+		"acme_email":            input.ACMEEmail,
+		"obfs_enabled":          input.ObfsEnabled,
+		"obfs_type":             input.ObfsType,
+		"traffic_stats_enabled": input.TrafficStatsEnabled,
+		"traffic_stats_listen":  input.TrafficStatsListen,
+		"server_url":            input.ServerURL,
+		"agent_grpc_target":     input.AgentGRPCTarget,
+		"agent_download_base":   input.AgentDownloadBase,
+	}
 }
 
 func (a *App) nodeSubroutes(w http.ResponseWriter, r *http.Request) {
@@ -655,6 +797,14 @@ func (a *App) clientsHandler(w http.ResponseWriter, r *http.Request) {
 		EntityID:   d.ID,
 		Details:    map[string]any{"account_id": d.AccountID, "slug": d.Slug, "name": d.Name},
 	})
+	a.publish(r.Context(), model.Event{
+		Type:        "client.created",
+		EntityType:  "client",
+		EntityID:    d.ID,
+		Actor:       "admin",
+		Message:     "Клиент создан.",
+		PayloadJSON: jsonString(map[string]any{"account_id": d.AccountID, "client": adminview.ClientItem(d)}),
+	})
 	httpx.JSON(w, http.StatusCreated, adminview.ClientItem(d))
 }
 
@@ -696,6 +846,14 @@ func (a *App) connectionsHandler(w http.ResponseWriter, r *http.Request) {
 			EntityType: "connection",
 			EntityID:   connection.ID,
 			Details:    map[string]any{"account_id": connection.AccountID, "client_id": connection.ClientID, "node_id": connection.NodeID, "protocol": connection.Protocol},
+		})
+		a.publish(r.Context(), model.Event{
+			Type:        "connection.created",
+			EntityType:  "connection",
+			EntityID:    connection.ID,
+			Actor:       "admin",
+			Message:     "Подключение создано.",
+			PayloadJSON: jsonString(map[string]any{"account_id": connection.AccountID, "client_id": connection.ClientID, "connection": adminview.ConnectionItem(connection)}),
 		})
 		httpx.JSON(w, http.StatusCreated, adminview.ConnectionItem(connection))
 	default:
@@ -1057,6 +1215,14 @@ func (a *App) provisionAccess(w http.ResponseWriter, r *http.Request) {
 			EntityID:   result.Connection.ID,
 			Details:    map[string]any{"account_id": result.Connection.AccountID, "client_id": result.Connection.ClientID, "node_id": result.Connection.NodeID, "protocol": result.Connection.Protocol, "config_count": len(result.Configs)},
 		})
+		a.publish(r.Context(), model.Event{
+			Type:        "connection.created",
+			EntityType:  "connection",
+			EntityID:    result.Connection.ID,
+			Actor:       "admin",
+			Message:     "Подключение создано.",
+			PayloadJSON: jsonString(map[string]any{"account_id": result.Connection.AccountID, "client_id": result.Connection.ClientID, "connection": adminview.ConnectionItem(result.Connection)}),
+		})
 		httpx.JSON(w, http.StatusCreated, map[string]any{
 			"connection": adminview.ConnectionItem(result.Connection),
 			"config":     adminview.IssuedConfigItem(result.Configs[0]),
@@ -1068,6 +1234,14 @@ func (a *App) provisionAccess(w http.ResponseWriter, r *http.Request) {
 		EntityType: "connection",
 		EntityID:   result.Connection.ID,
 		Details:    map[string]any{"account_id": result.Connection.AccountID, "client_id": result.Connection.ClientID, "node_id": result.Connection.NodeID, "protocol": result.Connection.Protocol, "config_count": len(result.Configs)},
+	})
+	a.publish(r.Context(), model.Event{
+		Type:        "connection.created",
+		EntityType:  "connection",
+		EntityID:    result.Connection.ID,
+		Actor:       "admin",
+		Message:     "Подключение создано.",
+		PayloadJSON: jsonString(map[string]any{"account_id": result.Connection.AccountID, "client_id": result.Connection.ClientID, "connection": adminview.ConnectionItem(result.Connection)}),
 	})
 	httpx.JSON(w, http.StatusCreated, map[string]any{
 		"connection": adminview.ConnectionItem(result.Connection),

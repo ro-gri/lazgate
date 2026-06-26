@@ -19,6 +19,7 @@ func (s *Server) AdminApp() *AdminApp {
 		Accounts:    s.accounts,
 		Connections: s.connections,
 		NodeInstall: s.nodeInstall,
+		Events:      s.events,
 		Audit:       s.audit,
 		Dashboard:   dashboard.New(s.store),
 		AdminAuth:   s.adminAuth,

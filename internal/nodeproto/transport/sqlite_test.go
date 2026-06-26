@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestSQLiteStoreLeaseRetryAckAndCleanup(t *testing.T) {
@@ -14,6 +16,7 @@ func TestSQLiteStoreLeaseRetryAckAndCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
+	assertMigrationApplied(t, st, 1)
 
 	now := time.Now().UTC()
 	if err := st.Enqueue(ctx, Message{
@@ -70,6 +73,7 @@ func TestSQLiteStoreProcessedDedup(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
+	assertMigrationApplied(t, st, 1)
 
 	if err := st.RecordProcessed(ctx, "node-1", "req-1", "auth_refresh", StatusApplied, []byte("result"), ""); err != nil {
 		t.Fatal(err)
@@ -80,5 +84,16 @@ func TestSQLiteStoreProcessedDedup(t *testing.T) {
 	}
 	if !ok || processed.Type != "auth_refresh" || string(processed.Result) != "result" {
 		t.Fatalf("unexpected processed record: ok=%v record=%#v", ok, processed)
+	}
+}
+
+func assertMigrationApplied(t *testing.T, st *SQLiteStore, version int64) {
+	t.Helper()
+	var applied int
+	if err := st.db.QueryRow(`select is_applied from `+migrationTable+` where version_id = ?`, version).Scan(&applied); err != nil {
+		t.Fatal(err)
+	}
+	if applied != 1 {
+		t.Fatalf("expected migration %d to be applied, got %d", version, applied)
 	}
 }

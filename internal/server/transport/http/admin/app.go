@@ -9,6 +9,7 @@ import (
 	auditsvc "laz/internal/server/audit"
 	"laz/internal/server/connections"
 	dashboardsvc "laz/internal/server/dashboard"
+	eventsvc "laz/internal/server/events"
 	"laz/internal/server/model"
 	provisioningsvc "laz/internal/server/provisioning"
 	"laz/internal/server/storage"
@@ -25,6 +26,7 @@ type Config struct {
 	Accounts               *accounts.Service
 	Connections            *connections.Service
 	NodeInstall            *provisioningsvc.Installer
+	Events                 *eventsvc.Bus
 	Dashboard              *dashboardsvc.Service
 	Audit                  *auditsvc.Recorder
 	AdminAuth              *adminauthsvc.Authenticator
@@ -42,6 +44,7 @@ type App struct {
 	accounts               *accounts.Service
 	connections            *connections.Service
 	nodeInstall            *provisioningsvc.Installer
+	events                 *eventsvc.Bus
 	dashboard              *dashboardsvc.Service
 	audit                  *auditsvc.Recorder
 	adminAuth              *adminauthsvc.Authenticator
@@ -60,6 +63,7 @@ func New(config Config) *App {
 		accounts:               config.Accounts,
 		connections:            config.Connections,
 		nodeInstall:            config.NodeInstall,
+		events:                 config.Events,
 		dashboard:              config.Dashboard,
 		audit:                  config.Audit,
 		adminAuth:              config.AdminAuth,
@@ -85,6 +89,7 @@ func (a *App) Mount(router chi.Router) {
 		r.Use(a.permissionGuard)
 		r.HandleFunc("/auth/me", a.authMe)
 		r.HandleFunc("/auth/logout", a.authLogout)
+		r.HandleFunc("/events", a.eventsStream)
 		r.HandleFunc("/audit-logs", a.auditLogs)
 		r.HandleFunc("/dashboard", a.dashboardHandler)
 		r.HandleFunc("/accounts", a.accountsHandler)

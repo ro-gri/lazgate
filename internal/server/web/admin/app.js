@@ -15,6 +15,9 @@ const state = {
   provisionCopyValues: new Map(),
   provisionQRValues: new Map(),
   qrDialogValue: "",
+  eventSource: null,
+  reloadTimer: 0,
+  activeInstallOperationID: "",
 };
 
 const app = document.querySelector("#app");
@@ -52,6 +55,8 @@ document.addEventListener("click", (event) => {
 });
 
 window.addEventListener("popstate", load);
+
+startEvents();
 
 function wireAutofill(form, { sourceName, targetName, editedFlag }) {
   const source = form.elements[sourceName];
@@ -208,6 +213,55 @@ function renderError(error) {
       ${escapeHTML(error.message || String(error))}
     </section>
   `;
+}
+
+function startEvents() {
+  if (state.eventSource) {
+    state.eventSource.close();
+  }
+  const source = new EventSource("/api/v1/events");
+  state.eventSource = source;
+  source.onmessage = (event) => handleServerEvent(event);
+  ["operation.created", "operation.step", "operation.failed", "node.created"].forEach((type) => {
+    source.addEventListener(type, handleServerEvent);
+  });
+  source.onerror = () => {
+    // EventSource reconnects automatically; keep the UI quiet unless a concrete event arrives.
+  };
+}
+
+function handleServerEvent(event) {
+  let payload = {};
+  try {
+    payload = JSON.parse(event.data || "{}");
+  } catch (_) {
+    return;
+  }
+  if (payload.message) {
+    showToast(payload.message);
+  }
+  const detail = payload.payload || {};
+  if (detail.operation?.id && detail.operation.id === state.activeInstallOperationID) {
+    const form = document.querySelector("#hysteria-node-form");
+    if (form) {
+      renderInstallProgress(form, {
+        operation: detail.operation,
+        steps: detail.steps || [],
+        logs: [payload.message || ""].filter(Boolean),
+      });
+    }
+  }
+  scheduleReloadForEvent(payload);
+}
+
+function scheduleReloadForEvent(event) {
+  if (!["node", "account", "client", "connection", "operation"].includes(event.entity_type || "")) {
+    return;
+  }
+  window.clearTimeout(state.reloadTimer);
+  state.reloadTimer = window.setTimeout(() => {
+    load();
+  }, 400);
 }
 
 async function loadDashboard() {
@@ -625,9 +679,9 @@ function openHysteriaNodeDialog(mode = "install") {
           agent_grpc_target: window.location.hostname ? `${window.location.hostname}:9443` : "",
         },
       });
+      state.activeInstallOperationID = result.operation?.id || "";
       renderInstallProgress(form, result);
-      showToast(isAttach ? "Hysteria2 VPS node attached" : "Hysteria2 VPS node added");
-      await load();
+      showToast("Installation scheduled");
     } catch (error) {
       renderInstallProgress(form, error.payload || { logs: [error.message || String(error)] });
       showToast(error.message || "Installation failed");
@@ -650,9 +704,10 @@ function renderInstallProgress(form, result) {
   }
   const steps = result.steps || [];
   const logs = result.logs || [];
+  const operation = result.operation || {};
   target.innerHTML = `
     <section class="install-progress">
-      <strong>Installation progress</strong>
+      <strong>Installation progress${operation.status ? ` · ${escapeHTML(operation.status)}` : ""}</strong>
       <div class="install-steps">
         ${steps.map((step) => `
           <div class="install-step ${escapeAttr(step.status || "pending")}">

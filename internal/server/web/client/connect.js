@@ -12,6 +12,8 @@ let unlockChallenge = "";
 const sessionKey = "laz_client_session";
 let sessionToken = localStorage.getItem(sessionKey) || "";
 let recoveryCode = "";
+let eventSource = null;
+let eventReloadTimer = 0;
 
 setPageHeader();
 userLine.innerHTML = sessionToken ? `<span class="subline">Войти по сохраненной сессии</span>` : `<span class="subline">Введите проверочный код</span>`;
@@ -110,6 +112,7 @@ async function unlock(challenge) {
     summary = payload || {};
     setPageHeader(summary);
     userLine.innerHTML = "";
+    startClientEvents();
     render();
   } catch (error) {
     showToast(error.message || String(error));
@@ -207,6 +210,7 @@ async function loadSession() {
     if (!response.ok) {
       localStorage.removeItem(sessionKey);
       sessionToken = "";
+      stopClientEvents();
       showToast(payload.error || "Сессия недействительна");
       renderUnlock();
       return;
@@ -215,10 +219,60 @@ async function loadSession() {
     summary = payload || {};
     setPageHeader(summary);
     userLine.innerHTML = "";
+    startClientEvents();
     render();
   } catch (error) {
     showToast(error.message || String(error));
   }
+}
+
+function startClientEvents() {
+  stopClientEvents();
+  const params = new URLSearchParams();
+  if (sessionToken) {
+    params.set("session_token", sessionToken);
+  } else if (data.token && unlockChallenge) {
+    params.set("token", data.token || "");
+    params.set("challenge", unlockChallenge);
+  } else {
+    return;
+  }
+  const source = new EventSource(`/client/v1/events?${params.toString()}`);
+  eventSource = source;
+  source.onmessage = handleClientEvent;
+  ["client.created", "client.deleted", "connection.created", "connection.deleted"].forEach((type) => {
+    source.addEventListener(type, handleClientEvent);
+  });
+  source.onerror = () => {
+    // EventSource reconnects itself.
+  };
+}
+
+function stopClientEvents() {
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+}
+
+function handleClientEvent(event) {
+  let payload = {};
+  try {
+    payload = JSON.parse(event.data || "{}");
+  } catch (_) {
+    return;
+  }
+  if (payload.message) {
+    showToast(payload.message);
+  }
+  window.clearTimeout(eventReloadTimer);
+  eventReloadTimer = window.setTimeout(async () => {
+    if (sessionToken) {
+      await loadSession();
+    } else if (unlockChallenge) {
+      await unlock(unlockChallenge);
+    }
+  }, 400);
 }
 
 function renderRecoveryResult() {
@@ -721,6 +775,7 @@ async function logoutSession() {
   } finally {
     localStorage.removeItem(sessionKey);
     sessionToken = "";
+    stopClientEvents();
     summary = null;
     unlockChallenge = "";
     selectedApp = "";

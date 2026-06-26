@@ -63,6 +63,7 @@ type Hysteria2Input struct {
 	ServerURL           string `json:"server_url"`
 	AgentGRPCTarget     string `json:"agent_grpc_target"`
 	AgentDownloadBase   string `json:"agent_download_base"`
+	Progress            func(Step)
 }
 
 type StepStatus string
@@ -100,10 +101,12 @@ type runner struct {
 	steps     []Step
 	logs      []string
 	secrets   []string
+	progress  func(Step)
 }
 
 func (i *Installer) InstallHysteria2(ctx context.Context, input Hysteria2Input) (Result, error) {
-	r := &runner{installer: i, input: normalize(input)}
+	input = normalize(input)
+	r := &runner{installer: i, input: input, progress: input.Progress}
 	r.initSteps()
 	result, err := r.run(ctx)
 	if err != nil {
@@ -115,7 +118,8 @@ func (i *Installer) InstallHysteria2(ctx context.Context, input Hysteria2Input) 
 }
 
 func (i *Installer) AttachHysteria2(ctx context.Context, input Hysteria2Input) (Result, error) {
-	r := &runner{installer: i, input: normalize(input), attach: true}
+	input = normalize(input)
+	r := &runner{installer: i, input: input, attach: true, progress: input.Progress}
 	r.initSteps()
 	result, err := r.run(ctx)
 	if err != nil {
@@ -167,6 +171,10 @@ func normalize(input Hysteria2Input) Hysteria2Input {
 }
 
 func (r *runner) initSteps() {
+	r.steps = InitialSteps(r.attach)
+}
+
+func InitialSteps(attach bool) []Step {
 	names := []string{
 		"Connecting to VPS",
 		"Checking system",
@@ -180,7 +188,7 @@ func (r *runner) initSteps() {
 		"Waiting for LazGate Agent",
 		"Done",
 	}
-	if r.attach {
+	if attach {
 		names = []string{
 			"Connecting to VPS",
 			"Checking system",
@@ -195,9 +203,11 @@ func (r *runner) initSteps() {
 			"Done",
 		}
 	}
+	steps := make([]Step, 0, len(names))
 	for _, name := range names {
-		r.steps = append(r.steps, Step{Name: name, Status: StepPending})
+		steps = append(steps, Step{Name: name, Status: StepPending})
 	}
+	return steps
 }
 
 func (r *runner) run(ctx context.Context) (Result, error) {
@@ -953,6 +963,7 @@ func (r *runner) start(name string) {
 		if r.steps[i].Name == name {
 			r.steps[i].Status = StepRunning
 			r.steps[i].StartedAt = time.Now().UTC()
+			r.emit(r.steps[i])
 			return
 		}
 	}
@@ -973,8 +984,15 @@ func (r *runner) finish(name string, status StepStatus, message string) {
 			r.steps[i].Message = r.sanitize(message)
 			r.steps[i].EndedAt = time.Now().UTC()
 			r.logs = append(r.logs, time.Now().UTC().Format(time.RFC3339)+" "+name+": "+r.steps[i].Message)
+			r.emit(r.steps[i])
 			return
 		}
+	}
+}
+
+func (r *runner) emit(step Step) {
+	if r.progress != nil {
+		r.progress(step)
 	}
 }
 

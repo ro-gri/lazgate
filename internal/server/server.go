@@ -12,6 +12,7 @@ import (
 	clientauthsvc "laz/internal/server/clientauth"
 	clienttokens "laz/internal/server/clienttokens"
 	"laz/internal/server/connections"
+	eventsvc "laz/internal/server/events"
 	provisioningsvc "laz/internal/server/provisioning"
 	commontokens "laz/internal/server/security/tokens"
 	"laz/internal/server/storage"
@@ -28,6 +29,7 @@ type Server struct {
 	clientAuth    *clientauthsvc.Service
 	clientTokens  *clienttokens.Service
 	nodeInstall   *provisioningsvc.Installer
+	events        *eventsvc.Bus
 	agentControl  *agentcontrol.Hub
 	adminAuth     *adminauthsvc.Authenticator
 	publicBaseURL string
@@ -43,6 +45,7 @@ func NewServer(st store.Store, adminToken string, publicBaseURL string, webPrefi
 func NewServerWithTransport(st store.Store, transport transportstore.Store, adminToken string, publicBaseURL string, webPrefix string) *Server {
 	connectionService := connections.New(st, commontokens.New)
 	agentControl := agentcontrol.NewHub(st, transport)
+	eventBus := eventsvc.New(st)
 	connectionService.SetAgentControl(agentControl)
 	server := &Server{
 		store:         st,
@@ -53,6 +56,7 @@ func NewServerWithTransport(st store.Store, transport transportstore.Store, admi
 		clientAuth:    clientauthsvc.New(st, connectionService),
 		clientTokens:  clienttokens.New(st),
 		nodeInstall:   provisioningsvc.New(st),
+		events:        eventBus,
 		agentControl:  agentControl,
 		publicBaseURL: strings.TrimRight(publicBaseURL, "/"),
 		webPrefix:     normalizeWebPrefix(webPrefix),

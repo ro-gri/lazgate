@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"net/http"
 
 	auditsvc "laz/internal/server/audit"
@@ -21,4 +22,11 @@ func (a *App) recordAudit(r *http.Request, event auditsvc.Event) {
 		return
 	}
 	_, _ = a.audit.Record(r.Context(), event)
+}
+
+func (a *App) recordSystemAudit(event auditsvc.Event) {
+	if a.audit == nil {
+		return
+	}
+	_, _ = a.audit.Record(context.Background(), event)
 }

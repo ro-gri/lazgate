@@ -15,6 +15,7 @@ func (s *Server) ClientApp() *ClientApp {
 		app: clientapp.New(clientapp.Config{
 			Store:            s.store,
 			ClientAuth:       s.clientAuth,
+			Events:           s.events,
 			Subscriptions:    s.subscriptions,
 			GetOrCreateToken: s.clientTokens.GetOrCreate,
 			AbsoluteURL:      s.absoluteURL,

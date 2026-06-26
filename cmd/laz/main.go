@@ -90,6 +90,17 @@ func cleanupTransport(ctx context.Context, transport transportstore.Store) {
 }
 
 func openTransportStore(cfg config.Config) (transportstore.Store, error) {
+	switch cfg.Storage {
+	case "postgres", "postgresql":
+		databaseURL := cfg.TransportDatabaseURL
+		if databaseURL == "" {
+			databaseURL = cfg.DatabaseURL
+		}
+		if databaseURL == "" {
+			return nil, os.ErrInvalid
+		}
+		return transportstore.OpenPostgres(databaseURL)
+	}
 	path := cfg.TransportDataPath
 	if path == "" {
 		if cfg.DataPath != "" {

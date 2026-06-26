@@ -10,11 +10,16 @@ import (
 	"path/filepath"
 	"time"
 
+	commonmigrations "laz/internal/persistence/migrations"
+	"laz/internal/persistence/sqlutil"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
 )
 
 type DB struct {
-	db *sql.DB
+	db      *sql.DB
+	dialect commonmigrations.Dialect
 }
 
 type AuthUser struct {
@@ -54,8 +59,24 @@ func Open(path string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	st := &DB{db: db}
-	if err := st.migrate(); err != nil {
+	if _, err := db.Exec(`pragma journal_mode = wal; pragma busy_timeout = 5000;`); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return openSQL(db, commonmigrations.DialectSQLite)
+}
+
+func OpenPostgres(databaseURL string) (*DB, error) {
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	return openSQL(db, commonmigrations.DialectPostgres)
+}
+
+func openSQL(db *sql.DB, dialect commonmigrations.Dialect) (*DB, error) {
+	st := &DB{db: db, dialect: dialect}
+	if err := applyMigrations(db, dialect); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -66,33 +87,8 @@ func (s *DB) Close() error {
 	return s.db.Close()
 }
 
-func (s *DB) migrate() error {
-	_, err := s.db.Exec(`pragma journal_mode = wal;
-create table if not exists auth_users (
-  user_id text primary key,
-  credential_id text not null unique,
-  username text not null unique,
-  password_hash text not null,
-  expires_at_ms integer,
-  quota_limit_bytes integer,
-  last_known_global_usage_bytes integer,
-  quota_guard_overage_bytes integer,
-  payload_json text not null default ''
-);
-create table if not exists sync_state (
-  key text primary key,
-  value text not null
-);
-create table if not exists pending_usage_batches (
-  batch_id text primary key,
-  payload_json text not null,
-  created_at_ms integer not null
-);`)
-	return err
-}
-
 func (s *DB) UpsertAuthUser(ctx context.Context, user AuthUser) error {
-	_, err := s.db.ExecContext(ctx, `insert into auth_users(user_id, credential_id, username, password_hash, expires_at_ms, quota_limit_bytes, last_known_global_usage_bytes, quota_guard_overage_bytes, payload_json)
+	_, err := s.exec(ctx, `insert into auth_users(user_id, credential_id, username, password_hash, expires_at_ms, quota_limit_bytes, last_known_global_usage_bytes, quota_guard_overage_bytes, payload_json)
 values(?, ?, ?, ?, ?, ?, ?, ?, ?)
 on conflict(user_id) do update set credential_id = excluded.credential_id, username = excluded.username, password_hash = excluded.password_hash, expires_at_ms = excluded.expires_at_ms, quota_limit_bytes = excluded.quota_limit_bytes, last_known_global_usage_bytes = excluded.last_known_global_usage_bytes, quota_guard_overage_bytes = excluded.quota_guard_overage_bytes, payload_json = excluded.payload_json`,
 		user.UserID, user.CredentialID, user.Username, user.PasswordHash, nullableInt(user.ExpiresAtMS), nullableInt(user.QuotaLimitBytes), nullableInt(user.LastKnownGlobalUsageBytes), nullableInt(user.QuotaGuardOverageBytes), user.PayloadJSON)
@@ -100,12 +96,12 @@ on conflict(user_id) do update set credential_id = excluded.credential_id, usern
 }
 
 func (s *DB) DeleteAuthUser(ctx context.Context, userID string) error {
-	_, err := s.db.ExecContext(ctx, `delete from auth_users where user_id = ?`, userID)
+	_, err := s.exec(ctx, `delete from auth_users where user_id = ?`, userID)
 	return err
 }
 
 func (s *DB) GetAuthUserByUsername(ctx context.Context, username string) (AuthUser, error) {
-	row := s.db.QueryRowContext(ctx, `select user_id, credential_id, username, password_hash, coalesce(expires_at_ms, 0), coalesce(quota_limit_bytes, 0), coalesce(last_known_global_usage_bytes, 0), coalesce(quota_guard_overage_bytes, 0), payload_json from auth_users where username = ?`, username)
+	row := s.queryRow(ctx, `select user_id, credential_id, username, password_hash, coalesce(expires_at_ms, 0), coalesce(quota_limit_bytes, 0), coalesce(last_known_global_usage_bytes, 0), coalesce(quota_guard_overage_bytes, 0), payload_json from auth_users where username = ?`, username)
 	return scanAuthUser(row)
 }
 
@@ -136,12 +132,12 @@ func (s *DB) ApplyFullAuthSnapshot(ctx context.Context, keep map[string]AuthUser
 		return err
 	}
 	for _, user := range keep {
-		if _, err := tx.ExecContext(ctx, `insert into auth_users(user_id, credential_id, username, password_hash, expires_at_ms, quota_limit_bytes, last_known_global_usage_bytes, quota_guard_overage_bytes, payload_json) values(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		if _, err := tx.ExecContext(ctx, s.bind(`insert into auth_users(user_id, credential_id, username, password_hash, expires_at_ms, quota_limit_bytes, last_known_global_usage_bytes, quota_guard_overage_bytes, payload_json) values(?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 			user.UserID, user.CredentialID, user.Username, user.PasswordHash, nullableInt(user.ExpiresAtMS), nullableInt(user.QuotaLimitBytes), nullableInt(user.LastKnownGlobalUsageBytes), nullableInt(user.QuotaGuardOverageBytes), user.PayloadJSON); err != nil {
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `insert into sync_state(key, value) values('last_applied_auth_manifest_started_at', ?) on conflict(key) do update set value = excluded.value`, int64String(cursorMS)); err != nil {
+	if _, err := tx.ExecContext(ctx, s.bind(`insert into sync_state(key, value) values('last_applied_auth_manifest_started_at', ?) on conflict(key) do update set value = excluded.value`), int64String(cursorMS)); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -149,7 +145,7 @@ func (s *DB) ApplyFullAuthSnapshot(ctx context.Context, keep map[string]AuthUser
 
 func (s *DB) GetState(ctx context.Context, key string) (string, error) {
 	var value string
-	err := s.db.QueryRowContext(ctx, `select value from sync_state where key = ?`, key).Scan(&value)
+	err := s.queryRow(ctx, `select value from sync_state where key = ?`, key).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrNotFound
 	}
@@ -157,7 +153,7 @@ func (s *DB) GetState(ctx context.Context, key string) (string, error) {
 }
 
 func (s *DB) SetState(ctx context.Context, key, value string) error {
-	_, err := s.db.ExecContext(ctx, `insert into sync_state(key, value) values(?, ?) on conflict(key) do update set value = excluded.value`, key, value)
+	_, err := s.exec(ctx, `insert into sync_state(key, value) values(?, ?) on conflict(key) do update set value = excluded.value`, key, value)
 	return err
 }
 
@@ -169,12 +165,12 @@ func (s *DB) SaveUsageBatch(ctx context.Context, batch UsageBatch) error {
 	if batch.CreatedMS == 0 {
 		batch.CreatedMS = time.Now().UnixMilli()
 	}
-	_, err = s.db.ExecContext(ctx, `insert or ignore into pending_usage_batches(batch_id, payload_json, created_at_ms) values(?, ?, ?)`, batch.BatchID, string(raw), batch.CreatedMS)
+	_, err = s.exec(ctx, s.insertIgnoreUsageBatchSQL(), batch.BatchID, string(raw), batch.CreatedMS)
 	return err
 }
 
 func (s *DB) ListUsageBatches(ctx context.Context, limit int) ([]UsageBatch, error) {
-	rows, err := s.db.QueryContext(ctx, `select payload_json from pending_usage_batches order by created_at_ms limit ?`, limit)
+	rows, err := s.query(ctx, `select payload_json from pending_usage_batches order by created_at_ms limit ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +210,7 @@ func (s *DB) UsageQueueStats(ctx context.Context) (int, int64, error) {
 }
 
 func (s *DB) DeleteUsageBatch(ctx context.Context, batchID string) error {
-	_, err := s.db.ExecContext(ctx, `delete from pending_usage_batches where batch_id = ?`, batchID)
+	_, err := s.exec(ctx, `delete from pending_usage_batches where batch_id = ?`, batchID)
 	return err
 }
 
@@ -256,4 +252,27 @@ func int64String(v int64) string {
 
 func strconvFormatInt(v int64) string {
 	return fmt.Sprintf("%d", v)
+}
+
+func (s *DB) bind(query string) string {
+	return sqlutil.Rebind(query, s.dialect)
+}
+
+func (s *DB) exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return s.db.ExecContext(ctx, s.bind(query), args...)
+}
+
+func (s *DB) query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return s.db.QueryContext(ctx, s.bind(query), args...)
+}
+
+func (s *DB) queryRow(ctx context.Context, query string, args ...any) *sql.Row {
+	return s.db.QueryRowContext(ctx, s.bind(query), args...)
+}
+
+func (s *DB) insertIgnoreUsageBatchSQL() string {
+	if s.dialect == commonmigrations.DialectPostgres {
+		return `insert into pending_usage_batches(batch_id, payload_json, created_at_ms) values(?, ?, ?) on conflict(batch_id) do nothing`
+	}
+	return `insert or ignore into pending_usage_batches(batch_id, payload_json, created_at_ms) values(?, ?, ?)`
 }

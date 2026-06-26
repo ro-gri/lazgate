@@ -8,6 +8,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("LAZ_STORAGE", "")
 	t.Setenv("LAZ_DATA", "")
 	t.Setenv("LAZ_DATABASE_URL", "")
+	t.Setenv("LAZ_TRANSPORT_DATABASE_URL", "")
 	t.Setenv("LAZ_SECRET_KEY", "")
 	t.Setenv("LAZ_ADMIN_TOKEN", "")
 	t.Setenv("LAZ_PUBLIC_BASE_URL", "")
@@ -44,6 +45,7 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("LAZ_STORAGE", "sqlite")
 	t.Setenv("LAZ_DATA", "/tmp/app.db")
 	t.Setenv("LAZ_DATABASE_URL", "postgres://laz:secret@127.0.0.1:5432/laz?sslmode=disable")
+	t.Setenv("LAZ_TRANSPORT_DATABASE_URL", "postgres://laz:secret@127.0.0.1:5432/laz_transport?sslmode=disable")
 	t.Setenv("LAZ_SECRET_KEY", "secret-key")
 	t.Setenv("LAZ_ADMIN_TOKEN", "secret")
 	t.Setenv("LAZ_PUBLIC_BASE_URL", "https://net.example")
@@ -57,6 +59,7 @@ func TestLoadOverrides(t *testing.T) {
 	if cfg.Addr != "0.0.0.0:9000" || cfg.Name != "Chamomile" || cfg.Storage != "sqlite" ||
 		cfg.DataPath != "/tmp/app.db" ||
 		cfg.DatabaseURL != "postgres://laz:secret@127.0.0.1:5432/laz?sslmode=disable" ||
+		cfg.TransportDatabaseURL != "postgres://laz:secret@127.0.0.1:5432/laz_transport?sslmode=disable" ||
 		cfg.SecretKey != "secret-key" || cfg.AdminToken != "secret" ||
 		cfg.PublicBaseURL != "https://net.example" || cfg.WebPrefix != "/admin-secret" ||
 		cfg.BlankPagePath != "/opt/blank.html" {

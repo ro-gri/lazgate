@@ -5,7 +5,7 @@ import (
 	"embed"
 	"fmt"
 
-	"github.com/pressly/goose/v3"
+	commonmigrations "laz/internal/persistence/migrations"
 )
 
 const migrationDir = "migrations/sql"
@@ -14,18 +14,14 @@ const migrationDir = "migrations/sql"
 var migrationFS embed.FS
 
 func applyMigrations(db *sql.DB, dialect SQLDialect) error {
-	goose.SetBaseFS(migrationFS)
+	var commonDialect commonmigrations.Dialect
 	switch dialect {
 	case dialectSQLite:
-		if err := goose.SetDialect("sqlite3"); err != nil {
-			return err
-		}
+		commonDialect = commonmigrations.DialectSQLite
 	case dialectPostgres:
-		if err := goose.SetDialect("postgres"); err != nil {
-			return err
-		}
+		commonDialect = commonmigrations.DialectPostgres
 	default:
 		return fmt.Errorf("unsupported migration dialect %q", dialect)
 	}
-	return goose.Up(db, migrationDir)
+	return commonmigrations.Apply(db, migrationFS, migrationDir, commonDialect)
 }
