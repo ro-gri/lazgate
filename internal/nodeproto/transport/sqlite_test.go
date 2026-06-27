@@ -46,8 +46,8 @@ func TestSQLiteStoreLeaseRetryAckAndCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(leased) != 1 || leased[0].Attempts != 1 {
-		t.Fatalf("expected re-leased message with one prior attempt, got %#v", leased)
+	if len(leased) != 1 {
+		t.Fatalf("expected re-leased message, got %#v", leased)
 	}
 	if err := st.MarkAcked(ctx, "msg-1", []byte("ok")); err != nil {
 		t.Fatal(err)

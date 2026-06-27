@@ -43,6 +43,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("open transport store: %v", err)
 	}
+	transport, err = transportstore.WrapSecrets(transport, cfg.SecretKey)
+	if err != nil {
+		log.Fatalf("wrap transport secrets: %v", err)
+	}
 	defer transport.Close()
 
 	srv := server.NewServerWithTransport(st, transport, cfg.AdminToken, cfg.PublicBaseURL, cfg.WebPrefix)
@@ -68,6 +72,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	srv.RunWorkers(ctx)
 	go cleanupTransport(ctx, transport)
 
 	log.Printf("laz listening on %s", cfg.Addr)

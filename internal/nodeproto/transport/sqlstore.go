@@ -95,10 +95,10 @@ func (s *SQLStore) enqueue(ctx context.Context, table string, msg Message) error
 	if err != nil {
 		return err
 	}
-	_, err = s.exec(ctx, `insert into `+table+`(actor_id, id, type, status, attempts, available_at_ms, expires_at_ms, created_at_ms, sent_at_ms, processed_at_ms, input_json, output_json, error)
-values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err = s.exec(ctx, `insert into `+table+`(actor_id, id, type, status, available_at_ms, expires_at_ms, created_at_ms, input_json, output_json, error)
+values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 on conflict(actor_id, id) do update set type = excluded.type, status = excluded.status, available_at_ms = excluded.available_at_ms, expires_at_ms = excluded.expires_at_ms, input_json = excluded.input_json, output_json = excluded.output_json, error = excluded.error`,
-		msg.ActorID, msg.ID, msg.Type, string(msg.Status), msg.Attempts, timeMS(msg.AvailableAt), timeMSOrNil(msg.ExpiresAt), timeMS(msg.CreatedAt), timeMSOrNil(msg.SentAt), timeMSOrNil(msg.ProcessedAt), input, output, msg.Error)
+		msg.ActorID, msg.ID, msg.Type, string(msg.Status), timeMS(msg.AvailableAt), timeMSOrNil(msg.ExpiresAt), timeMS(msg.CreatedAt), input, output, msg.Error)
 	return err
 }
 
@@ -108,29 +108,6 @@ func (s *SQLStore) LeasePending(ctx context.Context, actorID string, limit int, 
 
 func (s *SQLStore) LeaseInboxPending(ctx context.Context, actorID string, limit int, leaseFor time.Duration) ([]Message, error) {
 	return s.leasePending(ctx, "transport_inbox_messages", DirectionInbound, actorID, limit, leaseFor)
-}
-
-func (s *SQLStore) ListAfter(ctx context.Context, actorID string, afterMS int64, limit int) ([]Message, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	rows, err := s.db.QueryContext(ctx, s.bind(`select actor_id, id, type, status, attempts, available_at_ms, expires_at_ms, created_at_ms, sent_at_ms, processed_at_ms, input_json, output_json, error
-from transport_outbox_messages
-where actor_id = ? and created_at_ms > ?
-order by created_at_ms, id limit ?`), actorID, afterMS, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Message
-	for rows.Next() {
-		msg, err := scanMessage(rows, DirectionOutbound)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, msg)
-	}
-	return out, rows.Err()
 }
 
 func (s *SQLStore) leasePending(ctx context.Context, table string, direction Direction, actorID string, limit int, leaseFor time.Duration) ([]Message, error) {
@@ -145,7 +122,7 @@ func (s *SQLStore) leasePending(ctx context.Context, table string, direction Dir
 		return nil, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, s.bind(`select actor_id, id, type, status, attempts, available_at_ms, expires_at_ms, created_at_ms, sent_at_ms, processed_at_ms, input_json, output_json, error
+	rows, err := tx.QueryContext(ctx, s.bind(`select actor_id, id, type, status, available_at_ms, expires_at_ms, created_at_ms, input_json, output_json, error
 from `+table+`
 where actor_id = ? and status = ? and available_at_ms <= ? and (expires_at_ms is null or expires_at_ms > ?)
 order by available_at_ms, id limit ?`), actorID, string(StatusPending), nowMS, nowMS, limit)
@@ -165,18 +142,12 @@ order by available_at_ms, id limit ?`), actorID, string(StatusPending), nowMS, n
 		return nil, err
 	}
 	for _, msg := range out {
-		if _, err := tx.ExecContext(ctx, s.bind(`update `+table+` set status = ?, attempts = attempts + 1, available_at_ms = ?, sent_at_ms = ? where actor_id = ? and id = ?`),
-			string(StatusInFlight), leaseUntilMS, nowMS, msg.ActorID, msg.ID); err != nil {
+		if _, err := tx.ExecContext(ctx, s.bind(`update `+table+` set status = ?, available_at_ms = ? where actor_id = ? and id = ?`),
+			string(StatusInFlight), leaseUntilMS, msg.ActorID, msg.ID); err != nil {
 			return nil, err
 		}
 	}
 	return out, tx.Commit()
-}
-
-func (s *SQLStore) MarkSent(ctx context.Context, id string) error {
-	nowMS := time.Now().UTC().UnixMilli()
-	_, err := s.exec(ctx, `update transport_outbox_messages set sent_at_ms = ? where id = ?`, nowMS, id)
-	return err
 }
 
 func (s *SQLStore) MarkApplied(ctx context.Context, id string, result []byte) error {
@@ -191,16 +162,14 @@ func (s *SQLStore) MarkFailed(ctx context.Context, id string, errMsg string, ret
 	now := time.Now().UTC()
 	status := StatusFailed
 	available := retryAt
-	processedAt := timeMS(now)
 	if !retryAt.IsZero() && retryAt.After(now) {
 		status = StatusPending
-		processedAt = 0
 	}
 	if available.IsZero() {
 		available = now
 	}
-	_, err := s.exec(ctx, `update transport_outbox_messages set status = ?, available_at_ms = ?, error = ?, processed_at_ms = ? where id = ?`,
-		string(status), timeMS(available), errMsg, timeMSOrNil(timeFromMS(processedAt)), id)
+	_, err := s.exec(ctx, `update transport_outbox_messages set status = ?, available_at_ms = ?, error = ? where id = ?`,
+		string(status), timeMS(available), errMsg, id)
 	return err
 }
 
@@ -213,13 +182,13 @@ func (s *SQLStore) markDone(ctx context.Context, table string, id string, status
 	if err != nil {
 		return err
 	}
-	_, err = s.exec(ctx, `update `+table+` set status = ?, output_json = ?, error = ?, processed_at_ms = ? where id = ?`,
-		string(status), output, errMsg, time.Now().UTC().UnixMilli(), id)
+	_, err = s.exec(ctx, `update `+table+` set status = ?, output_json = ?, error = ? where id = ?`,
+		string(status), output, errMsg, id)
 	return err
 }
 
 func (s *SQLStore) IsProcessed(ctx context.Context, actorID string, messageID string) (ProcessedMessage, bool, error) {
-	row := s.queryRow(ctx, `select actor_id, id, type, status, output_json, error, processed_at_ms from transport_inbox_messages where actor_id = ? and id = ? and status in (?, ?, ?)`,
+	row := s.queryRow(ctx, `select actor_id, id, type, status, output_json, error from transport_inbox_messages where actor_id = ? and id = ? and status in (?, ?, ?)`,
 		actorID, messageID, string(StatusApplied), string(StatusAcked), string(StatusFailed))
 	msg, err := scanProcessed(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -241,10 +210,10 @@ func (s *SQLStore) RecordProcessed(ctx context.Context, actorID string, messageI
 	if err != nil {
 		return err
 	}
-	_, err = s.exec(ctx, `insert into transport_inbox_messages(actor_id, id, type, status, attempts, available_at_ms, expires_at_ms, created_at_ms, sent_at_ms, processed_at_ms, input_json, output_json, error)
-values(?, ?, ?, ?, 0, ?, null, ?, null, ?, ?, ?, ?)
-on conflict(actor_id, id) do update set status = excluded.status, output_json = excluded.output_json, error = excluded.error, processed_at_ms = excluded.processed_at_ms`,
-		actorID, messageID, typ, string(status), now.UnixMilli(), now.UnixMilli(), now.UnixMilli(), input, output, errMsg)
+	_, err = s.exec(ctx, `insert into transport_inbox_messages(actor_id, id, type, status, available_at_ms, expires_at_ms, created_at_ms, input_json, output_json, error)
+values(?, ?, ?, ?, ?, null, ?, ?, ?, ?)
+on conflict(actor_id, id) do update set status = excluded.status, output_json = excluded.output_json, error = excluded.error`,
+		actorID, messageID, typ, string(status), now.UnixMilli(), now.UnixMilli(), input, output, errMsg)
 	return err
 }
 
@@ -259,8 +228,8 @@ func (s *SQLStore) requeueExpiredLeases(ctx context.Context, table string, actor
 	if err != nil {
 		return err
 	}
-	_, err = s.exec(ctx, `update `+table+` set status = ?, processed_at_ms = ? where actor_id = ? and status in (?, ?) and expires_at_ms is not null and expires_at_ms <= ?`,
-		string(StatusExpired), nowMS, actorID, string(StatusPending), string(StatusInFlight), nowMS)
+	_, err = s.exec(ctx, `update `+table+` set status = ? where actor_id = ? and status in (?, ?) and expires_at_ms is not null and expires_at_ms <= ?`,
+		string(StatusExpired), actorID, string(StatusPending), string(StatusInFlight), nowMS)
 	return err
 }
 
@@ -308,9 +277,9 @@ func (s *SQLStore) cleanupTable(ctx context.Context, table string, policy Cleanu
 		cutoff := nowMS - rule.ttl.Milliseconds()
 		var err error
 		if rule.typ == "" {
-			_, err = s.exec(ctx, `delete from `+table+` where status = ? and processed_at_ms is not null and processed_at_ms < ?`, string(rule.status), cutoff)
+			_, err = s.exec(ctx, `delete from `+table+` where status = ? and created_at_ms < ?`, string(rule.status), cutoff)
 		} else {
-			_, err = s.exec(ctx, `delete from `+table+` where status = ? and type = ? and processed_at_ms is not null and processed_at_ms < ?`, string(rule.status), rule.typ, cutoff)
+			_, err = s.exec(ctx, `delete from `+table+` where status = ? and type = ? and created_at_ms < ?`, string(rule.status), rule.typ, cutoff)
 		}
 		if err != nil {
 			return err
@@ -318,7 +287,7 @@ func (s *SQLStore) cleanupTable(ctx context.Context, table string, policy Cleanu
 	}
 	if policy.PayloadRedactAfter > 0 {
 		cutoff := nowMS - policy.PayloadRedactAfter.Milliseconds()
-		if _, err := s.exec(ctx, `update `+table+` set input_json = '{}', output_json = '{}' where status in (?, ?, ?) and processed_at_ms is not null and processed_at_ms < ?`,
+		if _, err := s.exec(ctx, `update `+table+` set input_json = '{}', output_json = '{}' where status in (?, ?, ?) and created_at_ms < ?`,
 			string(StatusFailed), string(StatusExpired), string(StatusAcked), cutoff); err != nil {
 			return err
 		}
@@ -342,16 +311,14 @@ func scanMessage(scanner interface{ Scan(...any) error }, direction Direction) (
 	var msg Message
 	var status string
 	var availableMS, createdMS int64
-	var expiresMS, sentMS, processedMS sql.NullInt64
+	var expiresMS sql.NullInt64
 	var inputJSON, outputJSON string
-	err := scanner.Scan(&msg.ActorID, &msg.ID, &msg.Type, &status, &msg.Attempts, &availableMS, &expiresMS, &createdMS, &sentMS, &processedMS, &inputJSON, &outputJSON, &msg.Error)
+	err := scanner.Scan(&msg.ActorID, &msg.ID, &msg.Type, &status, &availableMS, &expiresMS, &createdMS, &inputJSON, &outputJSON, &msg.Error)
 	msg.Direction = direction
 	msg.Status = Status(status)
 	msg.AvailableAt = timeFromMS(availableMS)
 	msg.ExpiresAt = timeFromNullMS(expiresMS)
 	msg.CreatedAt = timeFromMS(createdMS)
-	msg.SentAt = timeFromNullMS(sentMS)
-	msg.ProcessedAt = timeFromNullMS(processedMS)
 	msg.Payload = mustDecodeMessageJSON(inputJSON).Payload
 	msg.ResultPayload = mustDecodeMessageJSON(outputJSON).Result
 	return msg, err
@@ -360,11 +327,9 @@ func scanMessage(scanner interface{ Scan(...any) error }, direction Direction) (
 func scanProcessed(scanner interface{ Scan(...any) error }) (ProcessedMessage, error) {
 	var msg ProcessedMessage
 	var status string
-	var processedMS sql.NullInt64
 	var outputJSON string
-	err := scanner.Scan(&msg.ActorID, &msg.MessageID, &msg.Type, &status, &outputJSON, &msg.Error, &processedMS)
+	err := scanner.Scan(&msg.ActorID, &msg.MessageID, &msg.Type, &status, &outputJSON, &msg.Error)
 	msg.Status = Status(status)
-	msg.ProcessedAt = timeFromNullMS(processedMS)
 	msg.Result = mustDecodeMessageJSON(outputJSON).Result
 	return msg, err
 }

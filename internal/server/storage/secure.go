@@ -164,6 +164,9 @@ func (s *SecureStore) GetConnection(id string) (model.Connection, error) {
 func (s *SecureStore) UpdateConnectionStatus(id string, status model.Status, lastErr string) (model.Connection, error) {
 	return s.inner.UpdateConnectionStatus(id, status, lastErr)
 }
+func (s *SecureStore) FinalizeConnectionsForAuthSnapshot(nodeID, accountID string, appliedSnapshotVersionMS int64) ([]model.Connection, error) {
+	return s.inner.FinalizeConnectionsForAuthSnapshot(nodeID, accountID, appliedSnapshotVersionMS)
+}
 func (s *SecureStore) ListConnections() []model.Connection { return s.inner.ListConnections() }
 
 func (s *SecureStore) CreateIssuedConfig(c model.IssuedConfig) (model.IssuedConfig, error) {
@@ -268,6 +271,17 @@ func (s *SecureStore) CreateAuditLog(log model.AuditLog) (model.AuditLog, error)
 	return s.inner.CreateAuditLog(log)
 }
 func (s *SecureStore) ListAuditLogs() []model.AuditLog { return s.inner.ListAuditLogs() }
+
+func (s *SecureStore) CreateEvent(event model.Event) (model.Event, error) {
+	return s.inner.CreateEvent(event)
+}
+func (s *SecureStore) ListPendingEvents(topic string, limit int) []model.Event {
+	return s.inner.ListPendingEvents(topic, limit)
+}
+func (s *SecureStore) MarkEventDelivered(id string, deliveredAtMS int64) error {
+	return s.inner.MarkEventDelivered(id, deliveredAtMS)
+}
+func (s *SecureStore) ExpireEvents(nowMS int64) error { return s.inner.ExpireEvents(nowMS) }
 
 func (s *SecureStore) UpsertNodeRuntime(runtime model.NodeRuntime) error {
 	return s.inner.UpsertNodeRuntime(runtime)

@@ -23,6 +23,7 @@ type Store interface {
 	CreateConnection(model.Connection) (model.Connection, error)
 	GetConnection(id string) (model.Connection, error)
 	UpdateConnectionStatus(id string, status model.Status, lastErr string) (model.Connection, error)
+	FinalizeConnectionsForAuthSnapshot(nodeID, accountID string, appliedSnapshotVersionMS int64) ([]model.Connection, error)
 	ListConnections() []model.Connection
 
 	CreateIssuedConfig(model.IssuedConfig) (model.IssuedConfig, error)
@@ -63,6 +64,11 @@ type Store interface {
 
 	CreateAuditLog(model.AuditLog) (model.AuditLog, error)
 	ListAuditLogs() []model.AuditLog
+
+	CreateEvent(model.Event) (model.Event, error)
+	ListPendingEvents(topic string, limit int) []model.Event
+	MarkEventDelivered(id string, deliveredAtMS int64) error
+	ExpireEvents(nowMS int64) error
 
 	UpsertNodeRuntime(model.NodeRuntime) error
 	GetNodeRuntime(nodeID string) (model.NodeRuntime, error)

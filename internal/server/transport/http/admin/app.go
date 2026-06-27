@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	transportstore "laz/internal/nodeproto/transport"
 	"laz/internal/server/accounts"
 	adminauthsvc "laz/internal/server/adminauth"
 	auditsvc "laz/internal/server/audit"
@@ -23,6 +24,7 @@ type ConfigProfiles func() []model.ConfigProfile
 
 type Config struct {
 	Store                  store.Store
+	Transport              transportstore.Store
 	Accounts               *accounts.Service
 	Connections            *connections.Service
 	NodeInstall            *provisioningsvc.Installer
@@ -41,6 +43,7 @@ type Config struct {
 
 type App struct {
 	store                  store.Store
+	transport              transportstore.Store
 	accounts               *accounts.Service
 	connections            *connections.Service
 	nodeInstall            *provisioningsvc.Installer
@@ -60,6 +63,7 @@ type App struct {
 func New(config Config) *App {
 	return &App{
 		store:                  config.Store,
+		transport:              config.Transport,
 		accounts:               config.Accounts,
 		connections:            config.Connections,
 		nodeInstall:            config.NodeInstall,

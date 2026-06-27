@@ -5,13 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	transportstore "laz/internal/nodeproto/transport"
 	"laz/internal/server/connections/remote"
 	"laz/internal/server/integrations/amnezia"
 	"laz/internal/server/integrations/blitz"
 	"laz/internal/server/integrations/nativehy2"
 	"laz/internal/server/model"
 	storeutil "laz/internal/server/storage"
+	"laz/internal/server/workqueue"
 )
 
 var ErrUnsupportedNodeType = errors.New("unsupported node type")
@@ -21,6 +24,7 @@ type Service struct {
 	providerFor func(model.Node, remote.AgentControl) (remote.Provider, error)
 	newPassword func() (string, error)
 	agent       remote.AgentControl
+	transport   transportstore.Store
 }
 
 type Store interface {
@@ -28,6 +32,7 @@ type Store interface {
 	CreateConnection(model.Connection) (model.Connection, error)
 	CreateIssuedConfig(model.IssuedConfig) (model.IssuedConfig, error)
 	UpdateConnectionStatus(id string, status model.Status, lastErr string) (model.Connection, error)
+	ListConnections() []model.Connection
 	RevokeConfigsForConnection(connectionID string) error
 	ListNodes() []model.Node
 }
@@ -42,6 +47,13 @@ func New(st Store, newPassword func() (string, error)) *Service {
 
 func (s *Service) SetAgentControl(agent remote.AgentControl) {
 	s.agent = agent
+}
+
+func (s *Service) SetTransport(store transportstore.Store) {
+	if store == nil {
+		store = transportstore.NopStore{}
+	}
+	s.transport = store
 }
 
 func defaultProviderFor(node model.Node, agent remote.AgentControl) (remote.Provider, error) {
@@ -143,13 +155,15 @@ func (s *Service) provisionRemote(ctx context.Context, input ConnectionInput) (C
 	}
 
 	connection, err := s.store.CreateConnection(model.Connection{
-		ID:         connectionID,
-		AccountID:  input.AccountID,
-		ClientID:   input.ClientID,
-		NodeID:     input.Node.ID,
-		Protocol:   input.Protocol,
-		RemoteID:   created.Ref.ID,
-		RemoteName: created.Ref.Name,
+		ID:            connectionID,
+		AccountID:     input.AccountID,
+		ClientID:      input.ClientID,
+		NodeID:        input.Node.ID,
+		Protocol:      input.Protocol,
+		RemoteID:      created.Ref.ID,
+		RemoteName:    created.Ref.Name,
+		Status:        initialConnectionStatus(input.Node),
+		DesiredStatus: model.StatusActive,
 	})
 	if err != nil {
 		_ = provider.DeleteConnection(ctx, created.Ref)
@@ -173,24 +187,42 @@ func (s *Service) provisionRemote(ctx context.Context, input ConnectionInput) (C
 		}
 		configs = append(configs, config)
 	}
-	if err := provider.ApplyConnection(ctx, remote.ApplyInput{
-		NodeID:       input.Node.ID,
-		AccountID:    input.AccountID,
-		ClientID:     input.ClientID,
-		ConnectionID: connection.ID,
-		RemoteID:     connection.RemoteID,
-		RemoteName:   connection.RemoteName,
-		Status:       connection.Status,
-		Operation:    "create",
-	}); err != nil {
-		_, _ = s.store.UpdateConnectionStatus(connection.ID, model.StatusError, err.Error())
-		return ConnectionResult{}, err
+	if input.Node.Type == model.NodeTypeNativeHy2 {
+		if err := s.enqueueAuthRefresh(ctx, input.Node.ID, input.AccountID); err != nil {
+			_, _ = s.store.UpdateConnectionStatus(connection.ID, model.StatusError, err.Error())
+			return ConnectionResult{}, err
+		}
+	} else {
+		if err := provider.ApplyConnection(ctx, remote.ApplyInput{
+			NodeID:       input.Node.ID,
+			AccountID:    input.AccountID,
+			ClientID:     input.ClientID,
+			ConnectionID: connection.ID,
+			RemoteID:     connection.RemoteID,
+			RemoteName:   connection.RemoteName,
+			Status:       connection.Status,
+			Operation:    "create",
+		}); err != nil {
+			_, _ = s.store.UpdateConnectionStatus(connection.ID, model.StatusError, err.Error())
+			return ConnectionResult{}, err
+		}
 	}
 
 	return ConnectionResult{Connection: connection, Configs: configs}, nil
 }
 
 func (s *Service) SetConnectionStatus(ctx context.Context, connection model.Connection, node model.Node, localStatus model.Status, remoteStatus string) (model.Connection, error) {
+	if node.Type == model.NodeTypeNativeHy2 {
+		pending := model.StatusPendingResume
+		if localStatus == model.StatusHeld {
+			pending = model.StatusPendingHold
+		}
+		updated, err := s.store.UpdateConnectionStatus(connection.ID, pending, "")
+		if err != nil {
+			return model.Connection{}, err
+		}
+		return updated, s.enqueueAuthRefresh(ctx, node.ID, connection.AccountID)
+	}
 	provider, err := s.providerFor(node, s.agent)
 	if err == nil {
 		err = provider.SetConnectionStatus(ctx, remote.Ref{ID: connection.RemoteID, Name: connection.RemoteName}, localStatus)
@@ -224,6 +256,13 @@ func (s *Service) SetConnectionStatus(ctx context.Context, connection model.Conn
 }
 
 func (s *Service) DeleteConnection(ctx context.Context, connection model.Connection, node model.Node) (model.Connection, error) {
+	if node.Type == model.NodeTypeNativeHy2 {
+		updated, err := s.store.UpdateConnectionStatus(connection.ID, model.StatusPendingDelete, "")
+		if err != nil {
+			return model.Connection{}, err
+		}
+		return updated, s.enqueueAuthRefresh(ctx, node.ID, connection.AccountID)
+	}
 	provider, err := s.providerFor(node, s.agent)
 	if err == nil {
 		err = provider.DeleteConnection(ctx, remote.Ref{ID: connection.RemoteID, Name: connection.RemoteName})
@@ -253,6 +292,41 @@ func (s *Service) DeleteConnection(ctx context.Context, connection model.Connect
 		return model.Connection{}, err
 	}
 	return updated, nil
+}
+
+func initialConnectionStatus(node model.Node) model.Status {
+	if node.Type == model.NodeTypeNativeHy2 {
+		return model.StatusPendingCreate
+	}
+	return model.StatusActive
+}
+
+func (s *Service) enqueueAuthRefresh(ctx context.Context, nodeID, accountID string) error {
+	store := s.transport
+	if store == nil {
+		store = transportstore.NopStore{}
+	}
+	return store.Enqueue(ctx, workqueue.NewAuthRefreshMessage(workqueue.AuthRefreshPayload{
+		NodeID:            nodeID,
+		AccountID:         accountID,
+		SnapshotVersionMS: s.snapshotVersionMS(nodeID, accountID),
+	}))
+}
+
+func (s *Service) snapshotVersionMS(nodeID, accountID string) int64 {
+	var max int64
+	for _, c := range s.store.ListConnections() {
+		if c.NodeID != nodeID || c.AccountID != accountID {
+			continue
+		}
+		if ms := c.UpdatedAt.UnixMilli(); ms > max {
+			max = ms
+		}
+	}
+	if max == 0 {
+		max = time.Now().UTC().UnixMilli()
+	}
+	return max
 }
 
 func (s *Service) SelectEnrollmentNodes(mode string, nodeIDs []string) ([]model.Node, error) {

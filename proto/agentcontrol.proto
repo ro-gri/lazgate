@@ -134,6 +134,7 @@ message AuthRefresh {
   string operation = 3;
   repeated UserAuthSnapshot snapshots = 4;
   int64 manifest_started_at = 5;
+  int64 snapshot_version_ms = 6;
 }
 
 message AuthRefreshResult {
@@ -142,4 +143,5 @@ message AuthRefreshResult {
   string status = 3;
   string message = 4;
   string error = 5;
+  int64 applied_snapshot_version_ms = 6;
 }

@@ -46,24 +46,24 @@ func (i *Installer) SetAgentServerCertPEM(pem string) {
 }
 
 type Hysteria2Input struct {
-	SSHHost             string `json:"ssh_host"`
-	SSHPort             int    `json:"ssh_port"`
-	BootstrapUser       string `json:"bootstrap_user"`
-	BootstrapPassword   string `json:"bootstrap_password"`
-	NodeName            string `json:"node_name"`
-	PublicDomain        string `json:"public_domain"`
-	HysteriaPort        int    `json:"hysteria_port"`
-	MasqueradeURL       string `json:"masquerade_url"`
-	InstallVersion      string `json:"install_version"`
-	ACMEEmail           string `json:"acme_email"`
-	ObfsEnabled         bool   `json:"obfs_enabled"`
-	ObfsType            string `json:"obfs_type"`
-	TrafficStatsEnabled bool   `json:"traffic_stats_enabled"`
-	TrafficStatsListen  string `json:"traffic_stats_listen"`
-	ServerURL           string `json:"server_url"`
-	AgentGRPCTarget     string `json:"agent_grpc_target"`
-	AgentDownloadBase   string `json:"agent_download_base"`
-	Progress            func(Step)
+	SSHHost             string     `json:"ssh_host"`
+	SSHPort             int        `json:"ssh_port"`
+	BootstrapUser       string     `json:"bootstrap_user"`
+	BootstrapPassword   string     `json:"bootstrap_password"`
+	NodeName            string     `json:"node_name"`
+	PublicDomain        string     `json:"public_domain"`
+	HysteriaPort        int        `json:"hysteria_port"`
+	MasqueradeURL       string     `json:"masquerade_url"`
+	InstallVersion      string     `json:"install_version"`
+	ACMEEmail           string     `json:"acme_email"`
+	ObfsEnabled         bool       `json:"obfs_enabled"`
+	ObfsType            string     `json:"obfs_type"`
+	TrafficStatsEnabled bool       `json:"traffic_stats_enabled"`
+	TrafficStatsListen  string     `json:"traffic_stats_listen"`
+	ServerURL           string     `json:"server_url"`
+	AgentGRPCTarget     string     `json:"agent_grpc_target"`
+	AgentDownloadBase   string     `json:"agent_download_base"`
+	Progress            func(Step) `json:"-"`
 }
 
 type StepStatus string
@@ -103,6 +103,8 @@ type runner struct {
 	secrets   []string
 	progress  func(Step)
 }
+
+const h2AgentUser = "h2-laz-agent"
 
 func (i *Installer) InstallHysteria2(ctx context.Context, input Hysteria2Input) (Result, error) {
 	input = normalize(input)
@@ -178,7 +180,7 @@ func InitialSteps(attach bool) []Step {
 	names := []string{
 		"Connecting to VPS",
 		"Checking system",
-		"Creating lazgate SSH user",
+		"Creating Hysteria agent SSH user",
 		"Installing Hysteria2",
 		"Installing LazGate Agent",
 		"Writing Hysteria2 config",
@@ -192,7 +194,7 @@ func InitialSteps(attach bool) []Step {
 		names = []string{
 			"Connecting to VPS",
 			"Checking system",
-			"Creating lazgate SSH user",
+			"Creating Hysteria agent SSH user",
 			"Detecting existing Hysteria2",
 			"Installing LazGate Agent",
 			"Writing Hysteria2 config",
@@ -259,18 +261,18 @@ func (r *runner) run(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 
-	r.start("Creating lazgate SSH user")
+	r.start("Creating Hysteria agent SSH user")
 	lazSSH, err := dialSSH(ctx, sshConfig{
 		Host:       r.input.SSHHost,
 		Port:       r.input.SSHPort,
-		User:       "lazgate",
+		User:       h2AgentUser,
 		PrivateKey: privateKey,
 	})
 	if err != nil {
-		r.fail("Creating lazgate SSH user", err)
+		r.fail("Creating Hysteria agent SSH user", err)
 		return Result{}, r.safeError(err)
 	}
-	r.ok("Creating lazgate SSH user", "Dedicated lazgate SSH user verified.")
+	r.ok("Creating Hysteria agent SSH user", "Dedicated Hysteria agent SSH user verified.")
 	defer lazSSH.Close()
 
 	if err := r.installOrDetectHysteria(ctx, lazSSH); err != nil {
@@ -312,7 +314,7 @@ func (r *runner) run(ctx context.Context) (Result, error) {
 		Region:     "",
 		SSHHost:    r.input.SSHHost,
 		SSHPort:    r.input.SSHPort,
-		SSHUser:    "lazgate",
+		SSHUser:    h2AgentUser,
 		SSHKeyPath: privateKey,
 		UseIPv6:    false,
 	})
@@ -435,21 +437,21 @@ ss -ltn | awk '{print $4}' | grep -Eq ':(80)$' && exit 21 || true`, installGuard
 }
 
 func (r *runner) createUser(ctx context.Context, conn *ssh.Client, publicKey string) error {
-	r.start("Creating lazgate SSH user")
+	r.start("Creating Hysteria agent SSH user")
 	script := fmt.Sprintf(`set -eu
-id lazgate >/dev/null 2>&1 || useradd --system --create-home --home-dir /home/lazgate --shell /bin/bash lazgate
-install -d -m 700 -o lazgate -g lazgate /home/lazgate/.ssh
-cat > /home/lazgate/.ssh/authorized_keys <<'EOF_KEY'
-%s
+id %[1]s >/dev/null 2>&1 || useradd --system --create-home --home-dir /home/%[1]s --shell /bin/bash %[1]s
+install -d -m 700 -o %[1]s -g %[1]s /home/%[1]s/.ssh
+cat > /home/%[1]s/.ssh/authorized_keys <<'EOF_KEY'
+%[2]s
 EOF_KEY
-chown lazgate:lazgate /home/lazgate/.ssh/authorized_keys
-chmod 600 /home/lazgate/.ssh/authorized_keys
-cat > /etc/sudoers.d/lazgate-hysteria <<'EOF_SUDO'
-lazgate ALL=(root) NOPASSWD:ALL
+chown %[1]s:%[1]s /home/%[1]s/.ssh/authorized_keys
+chmod 600 /home/%[1]s/.ssh/authorized_keys
+cat > /etc/sudoers.d/h2-laz-agent <<'EOF_SUDO'
+%[1]s ALL=(root) NOPASSWD:ALL
 EOF_SUDO
-chmod 440 /etc/sudoers.d/lazgate-hysteria`, publicKey)
+chmod 440 /etc/sudoers.d/h2-laz-agent`, h2AgentUser, publicKey)
 	if _, err := runSSH(ctx, conn, script); err != nil {
-		r.fail("Creating lazgate SSH user", err)
+		r.fail("Creating Hysteria agent SSH user", err)
 		return r.safeError(err)
 	}
 	return nil
@@ -598,36 +600,36 @@ case "$arch" in
   aarch64|arm64) asset_arch="arm64" ;;
   *) echo "unsupported architecture: $arch" >&2; exit 33 ;;
 esac
-sudo install -d -m 700 -o lazgate -g lazgate /etc/lazgate-agent /var/lib/lazgate-agent
+sudo install -d -m 700 -o %[1]s -g %[1]s /etc/lazgate-agent /var/lib/lazgate-agent
 tmp="$(mktemp -d)"
-curl -fsSL -o "$tmp/lazgate-agent" %s/lazgate-agent-linux-"$asset_arch"
-if curl -fsSL -o "$tmp/checksums.txt" %s/checksums.txt; then
+curl -fsSL -o "$tmp/lazgate-agent" %[2]s/lazgate-agent-linux-"$asset_arch"
+if curl -fsSL -o "$tmp/checksums.txt" %[2]s/checksums.txt; then
   (cd "$tmp" && grep "lazgate-agent-linux-$asset_arch" checksums.txt | sed "s/lazgate-agent-linux-$asset_arch/lazgate-agent/" | sha256sum -c -)
 fi
 sudo install -m 755 "$tmp/lazgate-agent" /usr/local/bin/lazgate-agent
 sudo tee /etc/lazgate-agent/config.yaml >/dev/null <<'EOF_AGENT_CONFIG'
-%s
+%[3]s
 EOF_AGENT_CONFIG
 sudo tee /etc/lazgate-agent/ca.crt >/dev/null <<'EOF_CA'
-%s
+%[4]s
 EOF_CA
 sudo tee /etc/lazgate-agent/server-ca.crt >/dev/null <<'EOF_SERVER_CA'
-%s
+%[5]s
 EOF_SERVER_CA
 sudo tee /etc/lazgate-agent/node.crt >/dev/null <<'EOF_CERT'
-%s
+%[6]s
 EOF_CERT
 sudo tee /etc/lazgate-agent/node.key >/dev/null <<'EOF_KEY'
-%s
+%[7]s
 EOF_KEY
-sudo chown -R lazgate:lazgate /etc/lazgate-agent /var/lib/lazgate-agent
+sudo chown -R %[1]s:%[1]s /etc/lazgate-agent /var/lib/lazgate-agent
 sudo chmod 600 /etc/lazgate-agent/config.yaml /etc/lazgate-agent/node.key
 sudo tee /etc/systemd/system/lazgate-agent.service >/dev/null <<'EOF_UNIT'
-%s
+%[8]s
 EOF_UNIT
 sudo systemctl daemon-reload
 sudo systemctl enable lazgate-agent
-sudo systemctl restart lazgate-agent`, shellQuote(r.input.AgentDownloadBase), shellQuote(r.input.AgentDownloadBase), config, certs.CAPEM, r.installer.agentServerCertPEM, certs.NodeCertPEM, certs.NodeKeyPEM, unit)
+sudo systemctl restart lazgate-agent`, h2AgentUser, shellQuote(r.input.AgentDownloadBase), config, certs.CAPEM, r.installer.agentServerCertPEM, certs.NodeCertPEM, certs.NodeKeyPEM, unit)
 	if _, err := runSSH(ctx, conn, script); err != nil {
 		r.fail("Installing LazGate Agent", err)
 		return r.safeError(err)
@@ -920,8 +922,8 @@ Wants=network-online.target
 ExecStart=/usr/local/bin/lazgate-agent --config /etc/lazgate-agent/config.yaml
 Restart=always
 RestartSec=5
-User=lazgate
-Group=lazgate
+User=` + h2AgentUser + `
+Group=` + h2AgentUser + `
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

@@ -31,13 +31,10 @@ type Message struct {
 	Type          string
 	Payload       []byte
 	Status        Status
-	Attempts      int
 	AvailableAt   time.Time
 	ExpiresAt     time.Time
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
-	SentAt        time.Time
-	ProcessedAt   time.Time
 	ResultPayload []byte
 	Error         string
 }
@@ -87,8 +84,6 @@ type Store interface {
 	EnqueueInbox(ctx context.Context, msg Message) error
 	LeasePending(ctx context.Context, actorID string, limit int, leaseFor time.Duration) ([]Message, error)
 	LeaseInboxPending(ctx context.Context, actorID string, limit int, leaseFor time.Duration) ([]Message, error)
-	ListAfter(ctx context.Context, actorID string, afterMS int64, limit int) ([]Message, error)
-	MarkSent(ctx context.Context, id string) error
 	MarkApplied(ctx context.Context, id string, result []byte) error
 	MarkAcked(ctx context.Context, id string, result []byte) error
 	MarkFailed(ctx context.Context, id string, errMsg string, retryAt time.Time) error
@@ -101,13 +96,12 @@ type Store interface {
 }
 
 type ProcessedMessage struct {
-	ActorID     string
-	MessageID   string
-	Type        string
-	Status      Status
-	Result      []byte
-	Error       string
-	ProcessedAt time.Time
+	ActorID   string
+	MessageID string
+	Type      string
+	Status    Status
+	Result    []byte
+	Error     string
 }
 
 type NopStore struct{}
@@ -120,12 +114,10 @@ func (NopStore) LeasePending(context.Context, string, int, time.Duration) ([]Mes
 func (NopStore) LeaseInboxPending(context.Context, string, int, time.Duration) ([]Message, error) {
 	return nil, nil
 }
-func (NopStore) ListAfter(context.Context, string, int64, int) ([]Message, error) { return nil, nil }
-func (NopStore) MarkSent(context.Context, string) error                           { return nil }
-func (NopStore) MarkApplied(context.Context, string, []byte) error                { return nil }
-func (NopStore) MarkAcked(context.Context, string, []byte) error                  { return nil }
-func (NopStore) MarkFailed(context.Context, string, string, time.Time) error      { return nil }
-func (NopStore) MarkExpired(context.Context, string, string) error                { return nil }
+func (NopStore) MarkApplied(context.Context, string, []byte) error           { return nil }
+func (NopStore) MarkAcked(context.Context, string, []byte) error             { return nil }
+func (NopStore) MarkFailed(context.Context, string, string, time.Time) error { return nil }
+func (NopStore) MarkExpired(context.Context, string, string) error           { return nil }
 func (NopStore) IsProcessed(context.Context, string, string) (ProcessedMessage, bool, error) {
 	return ProcessedMessage{}, false, nil
 }

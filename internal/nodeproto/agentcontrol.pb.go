@@ -1180,6 +1180,7 @@ type AuthRefresh struct {
 	Operation         string                 `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`
 	Snapshots         []*UserAuthSnapshot    `protobuf:"bytes,4,rep,name=snapshots,proto3" json:"snapshots,omitempty"`
 	ManifestStartedAt int64                  `protobuf:"varint,5,opt,name=manifest_started_at,json=manifestStartedAt,proto3" json:"manifest_started_at,omitempty"`
+	SnapshotVersionMs int64                  `protobuf:"varint,6,opt,name=snapshot_version_ms,json=snapshotVersionMs,proto3" json:"snapshot_version_ms,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1249,15 +1250,23 @@ func (x *AuthRefresh) GetManifestStartedAt() int64 {
 	return 0
 }
 
+func (x *AuthRefresh) GetSnapshotVersionMs() int64 {
+	if x != nil {
+		return x.SnapshotVersionMs
+	}
+	return 0
+}
+
 type AuthRefreshResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	AccountId     string                 `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
-	Message       string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
-	Error         string                 `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	NodeId                   string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	AccountId                string                 `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	Status                   string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Message                  string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+	Error                    string                 `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
+	AppliedSnapshotVersionMs int64                  `protobuf:"varint,6,opt,name=applied_snapshot_version_ms,json=appliedSnapshotVersionMs,proto3" json:"applied_snapshot_version_ms,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *AuthRefreshResult) Reset() {
@@ -1323,6 +1332,13 @@ func (x *AuthRefreshResult) GetError() string {
 		return x.Error
 	}
 	return ""
+}
+
+func (x *AuthRefreshResult) GetAppliedSnapshotVersionMs() int64 {
+	if x != nil {
+		return x.AppliedSnapshotVersionMs
+	}
+	return 0
 }
 
 var File_proto_agentcontrol_proto protoreflect.FileDescriptor
@@ -1428,21 +1444,23 @@ const file_proto_agentcontrol_proto_rawDesc = "" +
 	"\x0fruntime_command\x18\x04 \x01(\v2\x1d.laz.nodeproto.RuntimeCommandR\x0eruntimeCommand\x124\n" +
 	"\tusage_ack\x18\x05 \x01(\v2\x17.laz.nodeproto.UsageAckR\busageAck\x12Y\n" +
 	"\x16auth_manifest_response\x18\x06 \x01(\v2#.laz.nodeproto.AuthManifestResponseR\x14authManifestResponse\x12f\n" +
-	"\x1buser_auth_snapshot_response\x18\a \x01(\v2'.laz.nodeproto.UserAuthSnapshotResponseR\x18userAuthSnapshotResponse\"\xd2\x01\n" +
+	"\x1buser_auth_snapshot_response\x18\a \x01(\v2'.laz.nodeproto.UserAuthSnapshotResponseR\x18userAuthSnapshotResponse\"\x82\x02\n" +
 	"\vAuthRefresh\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x02 \x01(\tR\taccountId\x12\x1c\n" +
 	"\toperation\x18\x03 \x01(\tR\toperation\x12=\n" +
 	"\tsnapshots\x18\x04 \x03(\v2\x1f.laz.nodeproto.UserAuthSnapshotR\tsnapshots\x12.\n" +
-	"\x13manifest_started_at\x18\x05 \x01(\x03R\x11manifestStartedAt\"\x93\x01\n" +
+	"\x13manifest_started_at\x18\x05 \x01(\x03R\x11manifestStartedAt\x12.\n" +
+	"\x13snapshot_version_ms\x18\x06 \x01(\x03R\x11snapshotVersionMs\"\xd2\x01\n" +
 	"\x11AuthRefreshResult\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x02 \x01(\tR\taccountId\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12\x18\n" +
 	"\amessage\x18\x04 \x01(\tR\amessage\x12\x14\n" +
-	"\x05error\x18\x05 \x01(\tR\x05error2X\n" +
+	"\x05error\x18\x05 \x01(\tR\x05error\x12=\n" +
+	"\x1bapplied_snapshot_version_ms\x18\x06 \x01(\x03R\x18appliedSnapshotVersionMs2X\n" +
 	"\fAgentControl\x12H\n" +
 	"\aConnect\x12\x1b.laz.nodeproto.AgentMessage\x1a\x1c.laz.nodeproto.ServerMessage(\x010\x01B\"Z laz/internal/nodeproto;nodeprotob\x06proto3"
 

@@ -70,7 +70,7 @@ func (c *client) ApplyConnection(ctx context.Context, input remote.ApplyInput) e
 	if c.agent == nil || !c.meta.AgentEnabled {
 		return nil
 	}
-	if err := c.agent.RefreshUserAuth(ctx, input.NodeID, input.AccountID, input.Operation); err != nil {
+	if err := c.agent.RefreshUserAuth(ctx, input.NodeID, input.AccountID, 0); err != nil {
 		return err
 	}
 	return nil

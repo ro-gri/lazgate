@@ -110,7 +110,7 @@ func (h *Hub) Connect(stream nodeproto.AgentControl_ConnectServer) error {
 	return err
 }
 
-func (h *Hub) RefreshUserAuth(ctx context.Context, nodeID string, accountID string, operation string) error {
+func (h *Hub) RefreshUserAuth(ctx context.Context, nodeID string, accountID string, snapshotVersionMS int64) (*nodeproto.AuthRefreshResult, error) {
 	manifestStartedAt := time.Now().UnixMilli()
 	msg := &nodeproto.ServerMessage{
 		Type:      "auth_refresh",
@@ -118,37 +118,23 @@ func (h *Hub) RefreshUserAuth(ctx context.Context, nodeID string, accountID stri
 		AuthRefresh: &nodeproto.AuthRefresh{
 			NodeId:            nodeID,
 			AccountId:         accountID,
-			Operation:         operation,
 			Snapshots:         h.authSnapshotsForAccount(nodeID, accountID),
 			ManifestStartedAt: manifestStartedAt,
+			SnapshotVersionMs: snapshotVersionMS,
 		},
 	}
-	expiresAt := time.Now().UTC().Add(15 * time.Minute)
-	_ = h.transport.Enqueue(ctx, transportstore.Message{
-		ID:          msg.GetRequestId(),
-		ActorID:     nodeID,
-		Direction:   transportstore.DirectionOutbound,
-		Type:        "auth_refresh",
-		Payload:     mustMarshalProto(msg),
-		Status:      transportstore.StatusPending,
-		ExpiresAt:   expiresAt,
-		AvailableAt: time.Now().UTC(),
-	})
 	res, err := h.request(ctx, nodeID, msg)
 	if err != nil {
-		_ = h.transport.MarkFailed(ctx, msg.GetRequestId(), err.Error(), time.Now().UTC().Add(time.Minute))
-		return err
+		return nil, err
 	}
 	result := res.GetAuthRefreshResult()
 	if result.GetStatus() != "ok" {
-		_ = h.transport.MarkFailed(ctx, msg.GetRequestId(), result.GetError(), time.Now().UTC().Add(time.Minute))
 		if result.GetError() != "" {
-			return errors.New(result.GetError())
+			return result, errors.New(result.GetError())
 		}
-		return fmt.Errorf("auth refresh status %s", result.GetStatus())
+		return result, fmt.Errorf("auth refresh status %s", result.GetStatus())
 	}
-	_ = h.transport.MarkApplied(ctx, msg.GetRequestId(), mustMarshalProto(result))
-	return nil
+	return result, nil
 }
 
 func (h *Hub) authSnapshotsForAccount(nodeID, accountID string) []*nodeproto.UserAuthSnapshot {
@@ -178,9 +164,6 @@ func (h *Hub) request(ctx context.Context, nodeID string, msg *nodeproto.ServerM
 	}()
 	select {
 	case node.send <- msg:
-		if msg.GetRequestId() != "" {
-			_ = h.transport.MarkSent(ctx, msg.GetRequestId())
-		}
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -326,7 +309,9 @@ func (h *Hub) authSnapshots(input *nodeproto.UserAuthSnapshotRequest) *nodeproto
 }
 
 func (h *Hub) connectionAllowed(c model.Connection) bool {
-	if c.Status != model.StatusActive || c.DesiredStatus != model.StatusActive {
+	switch c.Status {
+	case model.StatusActive, model.StatusPendingCreate, model.StatusPendingResume:
+	default:
 		return false
 	}
 	account, err := h.store.GetAccount(c.AccountID)

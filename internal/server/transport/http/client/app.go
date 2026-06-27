@@ -8,6 +8,7 @@ import (
 
 	"errors"
 	clientauthsvc "laz/internal/server/clientauth"
+	eventsvc "laz/internal/server/events"
 	"laz/internal/server/model"
 	commontokens "laz/internal/server/security/tokens"
 	"laz/internal/server/storage"
@@ -25,6 +26,7 @@ type AbsoluteURLFunc func(r *http.Request, path string) string
 type App struct {
 	store            store.Store
 	clientAuth       *clientauthsvc.Service
+	events           *eventsvc.Bus
 	subscriptions    *subscriptionssvc.Service
 	getOrCreateToken ClientTokenFunc
 	absoluteURL      AbsoluteURLFunc
@@ -34,6 +36,7 @@ type App struct {
 type Config struct {
 	Store            store.Store
 	ClientAuth       *clientauthsvc.Service
+	Events           *eventsvc.Bus
 	Subscriptions    *subscriptionssvc.Service
 	GetOrCreateToken ClientTokenFunc
 	AbsoluteURL      AbsoluteURLFunc
@@ -44,6 +47,7 @@ func New(config Config) *App {
 	return &App{
 		store:            config.Store,
 		clientAuth:       config.ClientAuth,
+		events:           config.Events,
 		subscriptions:    config.Subscriptions,
 		getOrCreateToken: config.GetOrCreateToken,
 		absoluteURL:      config.AbsoluteURL,
@@ -66,6 +70,7 @@ func (a *App) Mount(router chi.Router) {
 		r.HandleFunc("/session/recovery-code", a.sessionRecoveryCode)
 		r.HandleFunc("/session/hp-link", a.sessionHPLink)
 		r.HandleFunc("/session/qr", a.sessionQR)
+		r.HandleFunc("/events", a.eventsStream)
 		r.HandleFunc("/hp-link", a.hpLink)
 		r.HandleFunc("/qr", a.qr)
 	})

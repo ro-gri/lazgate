@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -18,10 +20,12 @@ import (
 	"laz/internal/server/storage"
 	subscriptionssvc "laz/internal/server/subscriptions"
 	"laz/internal/server/transport/http/httpx"
+	"laz/internal/server/workqueue"
 )
 
 type Server struct {
 	store         store.Store
+	transport     transportstore.Store
 	accounts      *accounts.Service
 	connections   *connections.Service
 	subscriptions *subscriptionssvc.Service
@@ -31,6 +35,7 @@ type Server struct {
 	nodeInstall   *provisioningsvc.Installer
 	events        *eventsvc.Bus
 	agentControl  *agentcontrol.Hub
+	worker        *workqueue.Worker
 	adminAuth     *adminauthsvc.Authenticator
 	publicBaseURL string
 	webPrefix     string
@@ -46,24 +51,51 @@ func NewServerWithTransport(st store.Store, transport transportstore.Store, admi
 	connectionService := connections.New(st, commontokens.New)
 	agentControl := agentcontrol.NewHub(st, transport)
 	eventBus := eventsvc.New(st)
-	connectionService.SetAgentControl(agentControl)
+	nodeInstall := provisioningsvc.New(st)
+	connectionService.SetTransport(transport)
+	worker := workqueue.New(transport, eventBus, "server", slog.Default())
+	worker.Register(workqueue.TypeNodeAuthRefresh, workqueue.AuthRefreshHandler{Store: st, Refresher: agentControl})
+	hysteriaInstallHandler := workqueue.HysteriaInstallHandler{Installer: nodeInstall}
+	for _, typ := range []string{
+		workqueue.TypeHysteriaInstallConnect,
+		workqueue.TypeHysteriaInstallCheckSystem,
+		workqueue.TypeHysteriaInstallCreateUser,
+		workqueue.TypeHysteriaInstallInstallDetect,
+		workqueue.TypeHysteriaInstallWriteConfig,
+		workqueue.TypeHysteriaInstallInstallAgent,
+		workqueue.TypeHysteriaInstallStartService,
+		workqueue.TypeHysteriaInstallVerify,
+		workqueue.TypeHysteriaInstallRegisterNode,
+		workqueue.TypeHysteriaInstallWaitAgent,
+		workqueue.TypeHysteriaInstallDone,
+	} {
+		worker.Register(typ, hysteriaInstallHandler)
+	}
 	server := &Server{
 		store:         st,
+		transport:     transport,
 		accounts:      accounts.New(st, connectionService),
 		connections:   connectionService,
 		subscriptions: subscriptionssvc.New(st),
 		audit:         auditsvc.New(st),
 		clientAuth:    clientauthsvc.New(st, connectionService),
 		clientTokens:  clienttokens.New(st),
-		nodeInstall:   provisioningsvc.New(st),
+		nodeInstall:   nodeInstall,
 		events:        eventBus,
 		agentControl:  agentControl,
+		worker:        worker,
 		publicBaseURL: strings.TrimRight(publicBaseURL, "/"),
 		webPrefix:     normalizeWebPrefix(webPrefix),
 		appName:       "laz",
 	}
 	server.SetAdminAuth(adminToken, "")
 	return server
+}
+
+func (s *Server) RunWorkers(ctx context.Context) {
+	if s.worker != nil {
+		go s.worker.Run(ctx)
+	}
 }
 
 func (s *Server) AgentControl() *agentcontrol.Hub {

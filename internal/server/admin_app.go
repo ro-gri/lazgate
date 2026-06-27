@@ -16,6 +16,7 @@ type AdminApp struct {
 func (s *Server) AdminApp() *AdminApp {
 	return &AdminApp{app: adminapp.New(adminapp.Config{
 		Store:       s.store,
+		Transport:   s.transport,
 		Accounts:    s.accounts,
 		Connections: s.connections,
 		NodeInstall: s.nodeInstall,

@@ -9,6 +9,11 @@ const (
 	StatusHeld    Status = "held"
 	StatusDeleted Status = "deleted"
 	StatusError   Status = "error"
+
+	StatusPendingCreate Status = "pending_create"
+	StatusPendingHold   Status = "pending_hold"
+	StatusPendingResume Status = "pending_resume"
+	StatusPendingDelete Status = "pending_delete"
 )
 
 type NodeType string
@@ -217,6 +222,29 @@ type AuditLog struct {
 	EntityID   string
 	Details    string
 	CreatedAt  time.Time
+}
+
+type EventStatus string
+
+const (
+	EventPending   EventStatus = "pending"
+	EventDelivered EventStatus = "delivered"
+	EventExpired   EventStatus = "expired"
+)
+
+type Event struct {
+	ID            string
+	Topic         string
+	Status        EventStatus
+	Type          string
+	EntityType    string
+	EntityID      string
+	Actor         string
+	Message       string
+	PayloadJSON   string
+	CreatedAtMS   int64
+	DeliveredAtMS int64
+	ExpiresAtMS   int64
 }
 
 type NodeRuntime struct {

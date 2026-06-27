@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	eventsvc "laz/internal/server/events"
 	"laz/internal/server/model"
 )
 
@@ -11,7 +12,7 @@ func (a *App) publishClientEvent(ctx context.Context, accountID string, event mo
 	if a.events == nil {
 		return event
 	}
-	event.Actor = "client:" + accountID
+	event.Topic = eventsvc.ClientTopic(accountID)
 	return a.events.Publish(ctx, event)
 }
 

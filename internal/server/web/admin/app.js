@@ -222,7 +222,7 @@ function startEvents() {
   const source = new EventSource("/api/v1/events");
   state.eventSource = source;
   source.onmessage = (event) => handleServerEvent(event);
-  ["operation.created", "operation.step", "operation.failed", "node.created"].forEach((type) => {
+  ["hysteria.install.scheduled", "hysteria.install.step.applied", "hysteria.install.step.failed", "hysteria.install.done", "connection.applied", "node.created"].forEach((type) => {
     source.addEventListener(type, handleServerEvent);
   });
   source.onerror = () => {
@@ -241,21 +241,17 @@ function handleServerEvent(event) {
     showToast(payload.message);
   }
   const detail = payload.payload || {};
-  if (detail.operation?.id && detail.operation.id === state.activeInstallOperationID) {
+  if (detail.operation_id && detail.operation_id === state.activeInstallOperationID) {
     const form = document.querySelector("#hysteria-node-form");
     if (form) {
-      renderInstallProgress(form, {
-        operation: detail.operation,
-        steps: detail.steps || [],
-        logs: [payload.message || ""].filter(Boolean),
-      });
+      mergeInstallEvent(form, payload);
     }
   }
   scheduleReloadForEvent(payload);
 }
 
 function scheduleReloadForEvent(event) {
-  if (!["node", "account", "client", "connection", "operation"].includes(event.entity_type || "")) {
+  if (!["node", "account", "client", "connection", "hysteria_install"].includes(event.entity_type || "")) {
     return;
   }
   window.clearTimeout(state.reloadTimer);
@@ -720,6 +716,25 @@ function renderInstallProgress(form, result) {
       ${logs.length > 0 ? `<pre class="install-log">${escapeHTML(logs.join("\\n"))}</pre>` : ""}
     </section>
   `;
+}
+
+function mergeInstallEvent(form, event) {
+  const target = form.querySelector("#hysteria-install-progress");
+  const detail = event.payload || {};
+  const existing = Array.from(target?.querySelectorAll(".install-step") || []).map((row) => ({
+    name: row.querySelector("span")?.textContent || "",
+    status: row.querySelectorAll("span")[1]?.textContent || "pending",
+  }));
+  let steps = detail.steps || existing;
+  if (detail.step) {
+    steps = steps.map((step) => step.name === detail.step ? { ...step, status: detail.status || step.status, message: detail.message || "" } : step);
+  }
+  renderInstallProgress(form, {
+    operation: { id: detail.operation_id, status: detail.status },
+    steps,
+    logs: [event.message || detail.message || ""].filter(Boolean),
+    public_domain: detail.public_domain || "",
+  });
 }
 
 function renderNodePage(details) {

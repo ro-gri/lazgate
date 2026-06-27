@@ -15,7 +15,7 @@ type Provider interface {
 }
 
 type AgentControl interface {
-	RefreshUserAuth(ctx context.Context, nodeID string, accountID string, operation string) error
+	RefreshUserAuth(ctx context.Context, nodeID string, accountID string, snapshotVersionMS int64) error
 }
 
 type CreateInput struct {

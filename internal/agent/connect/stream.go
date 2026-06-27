@@ -264,7 +264,7 @@ func (c *StreamClient) handleServerMessage(ctx context.Context, handler StreamHa
 		if refresh == nil {
 			return
 		}
-		result := &nodeproto.AuthRefreshResult{NodeId: c.cfg.NodeID, AccountId: refresh.GetAccountId(), Status: "ok"}
+		result := &nodeproto.AuthRefreshResult{NodeId: c.cfg.NodeID, AccountId: refresh.GetAccountId(), Status: "ok", AppliedSnapshotVersionMs: refresh.GetSnapshotVersionMs()}
 		if handler.RefreshUserAuth != nil {
 			if err := handler.RefreshUserAuth(ctx, refresh); err != nil {
 				result.Status = "error"

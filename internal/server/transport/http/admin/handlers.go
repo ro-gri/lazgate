@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -19,6 +18,7 @@ import (
 	"laz/internal/server/storage"
 	adminview "laz/internal/server/transport/http/admin/view"
 	"laz/internal/server/transport/http/httpx"
+	"laz/internal/server/workqueue"
 )
 
 func (a *App) dashboardHandler(w http.ResponseWriter, r *http.Request) {
@@ -429,163 +429,39 @@ func (a *App) hysteria2NodeProvision(w http.ResponseWriter, r *http.Request, mod
 		httpx.Error(w, http.StatusBadRequest, "node installer is not configured")
 		return
 	}
-	operation, steps, err := a.createHysteriaOperation(mode, input)
+	operationID := store.NewID("op")
+	steps := provisioningsvc.InitialSteps(mode == "attach")
+	state, err := provisioningsvc.InitialInstallState(mode, input)
 	if err != nil {
+		httpx.ValidationError(w, err)
+		return
+	}
+	msg := workqueue.NewHysteriaInstallMessage(operationID, state)
+	if err := a.transport.Enqueue(r.Context(), msg); err != nil {
 		httpx.PrivateError(w, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	a.publish(r.Context(), model.Event{
-		Type:        "operation.created",
-		EntityType:  "operation",
-		EntityID:    operation.ID,
-		Actor:       "admin",
+		Type:        "hysteria.install.scheduled",
+		EntityType:  "hysteria_install",
+		EntityID:    operationID,
 		Message:     "Hysteria2 VPS installation scheduled.",
-		PayloadJSON: jsonString(map[string]any{"operation": operationItem(operation), "steps": operationStepItems(steps)}),
+		PayloadJSON: jsonString(map[string]any{"operation_id": operationID, "status": "scheduled", "steps": hysteriaStepItems(steps)}),
 	})
-	go a.runHysteriaOperation(operation, steps, mode, input)
 	httpx.JSON(w, http.StatusAccepted, map[string]any{
-		"operation": operationItem(operation),
-		"steps":     operationStepItems(steps),
-		"logs":      []string{"Installation request accepted."},
+		"operation":    map[string]any{"id": operationID, "type": "hysteria2." + mode, "status": "scheduled"},
+		"operation_id": operationID,
+		"steps":        hysteriaStepItems(steps),
+		"logs":         []string{"Installation request accepted."},
 	})
 }
 
-func (a *App) createHysteriaOperation(mode string, input provisioningsvc.Hysteria2Input) (model.Operation, []model.OperationStep, error) {
-	opType := "hysteria2.install"
-	summary := "Install Hysteria2 VPS"
-	if mode == "attach" {
-		opType = "hysteria2.attach"
-		summary = "Attach Hysteria2 VPS"
-	}
-	operation, err := a.store.CreateOperation(model.Operation{
-		Type:      opType,
-		Status:    operationRunning,
-		Summary:   summary,
-		InputJSON: jsonString(redactedHysteriaInput(input)),
-	})
-	if err != nil {
-		return model.Operation{}, nil, err
-	}
-	initial := provisioningsvc.InitialSteps(mode == "attach")
-	steps := make([]model.OperationStep, 0, len(initial))
-	for i, step := range initial {
-		created, err := a.store.CreateOperationStep(model.OperationStep{
-			OperationID: operation.ID,
-			Seq:         i + 1,
-			Name:        step.Name,
-			Type:        "hysteria2.step",
-			Status:      stepStatus(step.Status),
-			InputJSON:   "{}",
-			ResultJSON:  "{}",
-		})
-		if err != nil {
-			return model.Operation{}, nil, err
-		}
-		steps = append(steps, created)
-	}
-	return operation, steps, nil
-}
-
-func (a *App) runHysteriaOperation(operation model.Operation, steps []model.OperationStep, mode string, input provisioningsvc.Hysteria2Input) {
-	ctx := context.Background()
-	stepByName := map[string]model.OperationStep{}
+func hysteriaStepItems(steps []provisioningsvc.Step) []map[string]any {
+	out := make([]map[string]any, 0, len(steps))
 	for _, step := range steps {
-		stepByName[step.Name] = step
+		out = append(out, map[string]any{"name": step.Name, "status": step.Status, "message": step.Message})
 	}
-	input.Progress = func(progress provisioningsvc.Step) {
-		step := stepByName[progress.Name]
-		if step.ID == "" {
-			return
-		}
-		step.Status = stepStatus(progress.Status)
-		step.Message = progress.Message
-		step.StartedAt = progress.StartedAt
-		step.CompletedAt = progress.EndedAt
-		updated, err := a.store.UpdateOperationStep(step)
-		if err == nil {
-			stepByName[progress.Name] = updated
-		}
-		currentSteps := a.store.ListOperationSteps(operation.ID)
-		a.publish(ctx, model.Event{
-			Type:        "operation.step",
-			EntityType:  "operation",
-			EntityID:    operation.ID,
-			Actor:       "admin",
-			Message:     progress.Name + ": " + string(progress.Status),
-			PayloadJSON: jsonString(map[string]any{"operation": operationItem(operation), "steps": operationStepItems(currentSteps)}),
-		})
-	}
-	var result provisioningsvc.Result
-	var err error
-	if mode == "attach" {
-		result, err = a.nodeInstall.AttachHysteria2(ctx, input)
-	} else {
-		result, err = a.nodeInstall.InstallHysteria2(ctx, input)
-	}
-	if err != nil {
-		operation.Status = model.StatusError
-		operation.Error = "hysteria2 provisioning failed"
-		operation.ResultJSON = jsonString(map[string]any{
-			"error_id":   httpx.LogError(http.StatusBadGateway, err),
-			"retry_safe": result.RetrySafe,
-		})
-		operation, _ = a.store.UpdateOperation(operation)
-		a.publish(ctx, model.Event{
-			Type:        "operation.failed",
-			EntityType:  "operation",
-			EntityID:    operation.ID,
-			Actor:       "admin",
-			Message:     "Hysteria2 VPS installation failed.",
-			PayloadJSON: jsonString(map[string]any{"operation": operationItem(operation), "steps": operationStepItems(a.store.ListOperationSteps(operation.ID))}),
-		})
-		return
-	}
-	operation.Status = operationDone
-	operation.EntityType = "node"
-	operation.EntityID = result.Node.ID
-	operation.ResultJSON = jsonString(map[string]any{
-		"node":             adminview.NodeItem(result.Node),
-		"public_domain":    result.PublicDomain,
-		"hysteria_port":    result.HysteriaPort,
-		"service_name":     result.ServiceName,
-		"generated_domain": result.GeneratedDomain,
-	})
-	operation, _ = a.store.UpdateOperation(operation)
-	a.recordSystemAudit(auditsvc.Event{
-		Action:     "nodes." + mode + "_hysteria2",
-		EntityType: "node",
-		EntityID:   result.Node.ID,
-		Details:    map[string]any{"name": result.Node.Name, "domain": result.PublicDomain, "port": result.HysteriaPort},
-	})
-	a.publish(ctx, model.Event{
-		Type:        "node.created",
-		EntityType:  "node",
-		EntityID:    result.Node.ID,
-		Actor:       "admin",
-		Message:     "Hysteria2 VPS node is ready.",
-		PayloadJSON: jsonString(map[string]any{"operation": operationItem(operation), "steps": operationStepItems(a.store.ListOperationSteps(operation.ID)), "node": adminview.NodeItem(result.Node)}),
-	})
-}
-
-func redactedHysteriaInput(input provisioningsvc.Hysteria2Input) map[string]any {
-	return map[string]any{
-		"ssh_host":              input.SSHHost,
-		"ssh_port":              input.SSHPort,
-		"bootstrap_user":        input.BootstrapUser,
-		"node_name":             input.NodeName,
-		"public_domain":         input.PublicDomain,
-		"hysteria_port":         input.HysteriaPort,
-		"masquerade_url":        input.MasqueradeURL,
-		"install_version":       input.InstallVersion,
-		"acme_email":            input.ACMEEmail,
-		"obfs_enabled":          input.ObfsEnabled,
-		"obfs_type":             input.ObfsType,
-		"traffic_stats_enabled": input.TrafficStatsEnabled,
-		"traffic_stats_listen":  input.TrafficStatsListen,
-		"server_url":            input.ServerURL,
-		"agent_grpc_target":     input.AgentGRPCTarget,
-		"agent_download_base":   input.AgentDownloadBase,
-	}
+	return out
 }
 
 func (a *App) nodeSubroutes(w http.ResponseWriter, r *http.Request) {

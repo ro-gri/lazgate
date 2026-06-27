@@ -668,8 +668,12 @@ func (s *SQLStore) CreateConnection(a model.Connection) (model.Connection, error
 	if a.ID == "" {
 		a.ID = NewID("con")
 	}
-	a.Status = model.StatusActive
-	a.DesiredStatus = model.StatusActive
+	if a.Status == "" {
+		a.Status = model.StatusActive
+	}
+	if a.DesiredStatus == "" {
+		a.DesiredStatus = model.StatusActive
+	}
 	a.CreatedAt = t
 	a.UpdatedAt = t
 	_, err = s.exec(`insert into connections(id, account_id, client_id, node_id, protocol, remote_id, remote_name, status, desired_status, last_sync_at, last_error, created_at, updated_at) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -693,6 +697,53 @@ func (s *SQLStore) UpdateConnectionStatus(id string, status model.Status, lastEr
 		return model.Connection{}, err
 	}
 	return s.GetConnection(id)
+}
+
+func (s *SQLStore) FinalizeConnectionsForAuthSnapshot(nodeID, accountID string, appliedSnapshotVersionMS int64) ([]model.Connection, error) {
+	candidates := []model.Connection{}
+	rows, err := s.query(`select id, account_id, client_id, node_id, protocol, remote_id, remote_name, status, desired_status, last_sync_at, last_error, created_at, updated_at
+from connections
+where node_id = ? and account_id = ? and status in (?, ?, ?, ?)`,
+		nodeID, accountID, model.StatusPendingCreate, model.StatusPendingHold, model.StatusPendingResume, model.StatusPendingDelete)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		c, err := scanConnection(rows)
+		if err != nil {
+			return nil, err
+		}
+		if !c.UpdatedAt.IsZero() && c.UpdatedAt.UnixMilli() <= appliedSnapshotVersionMS {
+			candidates = append(candidates, c)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	finalized := make([]model.Connection, 0, len(candidates))
+	for _, c := range candidates {
+		next := model.StatusActive
+		switch c.Status {
+		case model.StatusPendingCreate, model.StatusPendingResume:
+			next = model.StatusActive
+		case model.StatusPendingHold:
+			next = model.StatusHeld
+		case model.StatusPendingDelete:
+			next = model.StatusDeleted
+			if err := s.RevokeConfigsForConnection(c.ID); err != nil {
+				return finalized, err
+			}
+		default:
+			continue
+		}
+		updated, err := s.UpdateConnectionStatus(c.ID, next, "")
+		if err != nil {
+			return finalized, err
+		}
+		finalized = append(finalized, updated)
+	}
+	return finalized, nil
 }
 
 func (s *SQLStore) ListConnections() []model.Connection {
@@ -1027,114 +1078,15 @@ func (s *SQLStore) ListAuditLogs() []model.AuditLog {
 	return out
 }
 
-func (s *SQLStore) CreateOperation(op model.Operation) (model.Operation, error) {
-	if op.ID == "" {
-		op.ID = NewID("op")
-	}
-	if op.Status == "" {
-		op.Status = model.StatusActive
-	}
-	if op.InputJSON == "" {
-		op.InputJSON = "{}"
-	}
-	if op.ResultJSON == "" {
-		op.ResultJSON = "{}"
-	}
-	op.CreatedAt = now()
-	op.UpdatedAt = op.CreatedAt
-	_, err := s.exec(`insert into operations(id, type, status, entity_type, entity_id, summary, input_json, result_json, error, created_at, updated_at) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		op.ID, op.Type, op.Status, op.EntityType, op.EntityID, op.Summary, op.InputJSON, op.ResultJSON, op.Error, ts(op.CreatedAt), ts(op.UpdatedAt))
-	return op, err
-}
-
-func (s *SQLStore) UpdateOperation(op model.Operation) (model.Operation, error) {
-	op.UpdatedAt = now()
-	if op.ResultJSON == "" {
-		op.ResultJSON = "{}"
-	}
-	_, err := s.exec(`update operations set status = ?, entity_type = ?, entity_id = ?, summary = ?, result_json = ?, error = ?, updated_at = ? where id = ?`,
-		op.Status, op.EntityType, op.EntityID, op.Summary, op.ResultJSON, op.Error, ts(op.UpdatedAt), op.ID)
-	if err != nil {
-		return op, err
-	}
-	return s.GetOperation(op.ID)
-}
-
-func (s *SQLStore) GetOperation(id string) (model.Operation, error) {
-	return scanOperation(s.queryRow(`select id, type, status, entity_type, entity_id, summary, input_json, result_json, error, created_at, updated_at from operations where id = ?`, id))
-}
-
-func (s *SQLStore) ListOperations(limit int) []model.Operation {
-	if limit <= 0 {
-		limit = 50
-	}
-	rows, err := s.query(`select id, type, status, entity_type, entity_id, summary, input_json, result_json, error, created_at, updated_at from operations order by updated_at desc limit ?`, limit)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-	var out []model.Operation
-	for rows.Next() {
-		item, err := scanOperation(rows)
-		if err == nil {
-			out = append(out, item)
-		}
-	}
-	return out
-}
-
-func (s *SQLStore) CreateOperationStep(step model.OperationStep) (model.OperationStep, error) {
-	if step.ID == "" {
-		step.ID = NewID("ops")
-	}
-	if step.Status == "" {
-		step.Status = model.StatusActive
-	}
-	if step.InputJSON == "" {
-		step.InputJSON = "{}"
-	}
-	if step.ResultJSON == "" {
-		step.ResultJSON = "{}"
-	}
-	step.CreatedAt = now()
-	step.UpdatedAt = step.CreatedAt
-	_, err := s.exec(`insert into operation_steps(id, operation_id, seq, name, type, status, message, input_json, result_json, error, created_at, started_at, completed_at, updated_at) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		step.ID, step.OperationID, step.Seq, step.Name, step.Type, step.Status, step.Message, step.InputJSON, step.ResultJSON, step.Error, ts(step.CreatedAt), tsOrNil(step.StartedAt), tsOrNil(step.CompletedAt), ts(step.UpdatedAt))
-	return step, err
-}
-
-func (s *SQLStore) UpdateOperationStep(step model.OperationStep) (model.OperationStep, error) {
-	step.UpdatedAt = now()
-	if step.ResultJSON == "" {
-		step.ResultJSON = "{}"
-	}
-	_, err := s.exec(`update operation_steps set status = ?, message = ?, result_json = ?, error = ?, started_at = ?, completed_at = ?, updated_at = ? where id = ?`,
-		step.Status, step.Message, step.ResultJSON, step.Error, tsOrNil(step.StartedAt), tsOrNil(step.CompletedAt), ts(step.UpdatedAt), step.ID)
-	if err != nil {
-		return step, err
-	}
-	return scanOperationStep(s.queryRow(`select id, operation_id, seq, name, type, status, message, input_json, result_json, error, created_at, started_at, completed_at, updated_at from operation_steps where id = ?`, step.ID))
-}
-
-func (s *SQLStore) ListOperationSteps(operationID string) []model.OperationStep {
-	rows, err := s.query(`select id, operation_id, seq, name, type, status, message, input_json, result_json, error, created_at, started_at, completed_at, updated_at from operation_steps where operation_id = ? order by seq`, operationID)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-	var out []model.OperationStep
-	for rows.Next() {
-		item, err := scanOperationStep(rows)
-		if err == nil {
-			out = append(out, item)
-		}
-	}
-	return out
-}
-
 func (s *SQLStore) CreateEvent(event model.Event) (model.Event, error) {
 	if event.ID == "" {
 		event.ID = NewID("evt")
+	}
+	if event.Topic == "" {
+		event.Topic = "admin"
+	}
+	if event.Status == "" {
+		event.Status = model.EventPending
 	}
 	if event.PayloadJSON == "" {
 		event.PayloadJSON = "{}"
@@ -1142,16 +1094,19 @@ func (s *SQLStore) CreateEvent(event model.Event) (model.Event, error) {
 	if event.CreatedAtMS == 0 {
 		event.CreatedAtMS = now().UnixMilli()
 	}
-	_, err := s.exec(`insert into events(id, type, entity_type, entity_id, actor, message, payload_json, created_at_ms) values(?, ?, ?, ?, ?, ?, ?, ?)`,
-		event.ID, event.Type, event.EntityType, event.EntityID, event.Actor, event.Message, event.PayloadJSON, event.CreatedAtMS)
+	_, err := s.exec(`insert into event_log(id, topic, status, type, entity_type, entity_id, message, payload_json, created_at_ms, delivered_at_ms, expires_at_ms) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		event.ID, event.Topic, event.Status, event.Type, event.EntityType, event.EntityID, event.Message, event.PayloadJSON, event.CreatedAtMS, nilMS(event.DeliveredAtMS), nilMS(event.ExpiresAtMS))
 	return event, err
 }
 
-func (s *SQLStore) ListEventsAfter(afterMS int64, limit int) []model.Event {
+func (s *SQLStore) ListPendingEvents(topic string, limit int) []model.Event {
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.query(`select id, type, entity_type, entity_id, actor, message, payload_json, created_at_ms from events where created_at_ms > ? order by created_at_ms, id limit ?`, afterMS, limit)
+	rows, err := s.query(`select id, topic, status, type, entity_type, entity_id, message, payload_json, created_at_ms, delivered_at_ms, expires_at_ms
+from event_log
+where topic = ? and status = ?
+order by created_at_ms, id limit ?`, topic, model.EventPending, limit)
 	if err != nil {
 		return nil
 	}
@@ -1164,6 +1119,22 @@ func (s *SQLStore) ListEventsAfter(afterMS int64, limit int) []model.Event {
 		}
 	}
 	return out
+}
+
+func (s *SQLStore) MarkEventDelivered(id string, deliveredAtMS int64) error {
+	if deliveredAtMS == 0 {
+		deliveredAtMS = now().UnixMilli()
+	}
+	_, err := s.exec(`update event_log set status = ?, delivered_at_ms = ? where id = ?`, model.EventDelivered, deliveredAtMS, id)
+	return err
+}
+
+func (s *SQLStore) ExpireEvents(nowMS int64) error {
+	if nowMS == 0 {
+		nowMS = now().UnixMilli()
+	}
+	_, err := s.exec(`update event_log set status = ? where status = ? and expires_at_ms is not null and expires_at_ms <= ?`, model.EventExpired, model.EventPending, nowMS)
+	return err
 }
 
 func (s *SQLStore) UpsertNodeRuntime(runtime model.NodeRuntime) error {
@@ -1866,34 +1837,18 @@ func scanAuditLog(row scanner) (model.AuditLog, error) {
 	return auditLogModel(log), convertErr(err)
 }
 
-func scanOperation(row scanner) (model.Operation, error) {
-	var op model.Operation
-	var status string
-	var createdAt, updatedAt string
-	err := row.Scan(&op.ID, &op.Type, &status, &op.EntityType, &op.EntityID, &op.Summary, &op.InputJSON, &op.ResultJSON, &op.Error, &createdAt, &updatedAt)
-	op.Status = model.Status(status)
-	op.CreatedAt = parseTS(createdAt)
-	op.UpdatedAt = parseTS(updatedAt)
-	return op, convertErr(err)
-}
-
-func scanOperationStep(row scanner) (model.OperationStep, error) {
-	var step model.OperationStep
-	var status string
-	var createdAt string
-	var startedAt, completedAt, updatedAt sql.NullString
-	err := row.Scan(&step.ID, &step.OperationID, &step.Seq, &step.Name, &step.Type, &status, &step.Message, &step.InputJSON, &step.ResultJSON, &step.Error, &createdAt, &startedAt, &completedAt, &updatedAt)
-	step.Status = model.Status(status)
-	step.CreatedAt = parseTS(createdAt)
-	step.StartedAt = parseNullTS(startedAt)
-	step.CompletedAt = parseNullTS(completedAt)
-	step.UpdatedAt = parseNullTS(updatedAt)
-	return step, convertErr(err)
-}
-
 func scanEvent(row scanner) (model.Event, error) {
 	var event model.Event
-	err := row.Scan(&event.ID, &event.Type, &event.EntityType, &event.EntityID, &event.Actor, &event.Message, &event.PayloadJSON, &event.CreatedAtMS)
+	var status string
+	var deliveredAt, expiresAt sql.NullInt64
+	err := row.Scan(&event.ID, &event.Topic, &status, &event.Type, &event.EntityType, &event.EntityID, &event.Message, &event.PayloadJSON, &event.CreatedAtMS, &deliveredAt, &expiresAt)
+	event.Status = model.EventStatus(status)
+	if deliveredAt.Valid {
+		event.DeliveredAtMS = deliveredAt.Int64
+	}
+	if expiresAt.Valid {
+		event.ExpiresAtMS = expiresAt.Int64
+	}
 	return event, convertErr(err)
 }
 
@@ -1936,6 +1891,13 @@ func tsOrNil(t time.Time) any {
 		return nil
 	}
 	return ts(t)
+}
+
+func nilMS(value int64) any {
+	if value == 0 {
+		return nil
+	}
+	return value
 }
 
 func boolInt(value bool) int {
