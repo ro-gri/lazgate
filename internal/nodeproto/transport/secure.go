@@ -19,10 +19,14 @@ type SecureStore struct {
 	aead  cipher.AEAD
 }
 
-func WrapSecrets(inner Store, key string) (Store, error) {
+type SecretBox struct {
+	aead cipher.AEAD
+}
+
+func NewSecretBox(key string) (*SecretBox, error) {
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return inner, nil
+		return nil, nil
 	}
 	raw, err := secretKeyBytes(key)
 	if err != nil {
@@ -36,7 +40,18 @@ func WrapSecrets(inner Store, key string) (Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &SecureStore{inner: inner, aead: aead}, nil
+	return &SecretBox{aead: aead}, nil
+}
+
+func WrapSecrets(inner Store, key string) (Store, error) {
+	box, err := NewSecretBox(key)
+	if err != nil {
+		return nil, err
+	}
+	if box == nil {
+		return inner, nil
+	}
+	return &SecureStore{inner: inner, aead: box.aead}, nil
 }
 
 func secretKeyBytes(value string) ([]byte, error) {
@@ -53,17 +68,21 @@ func secretKeyBytes(value string) ([]byte, error) {
 	return sum[:], nil
 }
 
-func (s *SecureStore) seal(raw []byte) []byte {
-	if len(raw) == 0 || strings.HasPrefix(string(raw), encryptedPrefix) {
+func (b *SecretBox) Seal(raw []byte) []byte {
+	if b == nil || len(raw) == 0 || strings.HasPrefix(string(raw), encryptedPrefix) {
 		return raw
 	}
-	nonce := make([]byte, s.aead.NonceSize())
+	nonce := make([]byte, b.aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		panic(err)
 	}
-	sealed := s.aead.Seal(nil, nonce, raw, nil)
+	sealed := b.aead.Seal(nil, nonce, raw, nil)
 	payload := append(nonce, sealed...)
 	return []byte(encryptedPrefix + base64.RawStdEncoding.EncodeToString(payload))
+}
+
+func (s *SecureStore) seal(raw []byte) []byte {
+	return (&SecretBox{aead: s.aead}).Seal(raw)
 }
 
 func (s *SecureStore) open(raw []byte) []byte {

@@ -1,3 +1,5 @@
+const MAX_EVENT_HISTORY = 100;
+
 const state = {
   webPrefix: document.body.dataset.webPrefix || "/admin",
   csrfToken: "",
@@ -16,12 +18,15 @@ const state = {
   provisionQRValues: new Map(),
   qrDialogValue: "",
   eventSource: null,
+  eventHistory: [],
   reloadTimer: 0,
   activeInstallOperationID: "",
 };
 
 const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
+const eventHistoryLink = document.querySelector("#event-history-link");
+const eventHistoryCount = document.querySelector("#event-history-count");
 const logoutButton = document.querySelector("#logout");
 const autofill = {
   accountEdited: false,
@@ -33,6 +38,10 @@ const csrfKey = `laz_admin_csrf:${state.webPrefix}`;
 state.csrfToken = localStorage.getItem(csrfKey) || "";
 if (!state.csrfToken) {
   location.replace(`${state.webPrefix}/login`);
+}
+
+if (eventHistoryLink) {
+  eventHistoryLink.addEventListener("click", openEventHistory);
 }
 
 logoutButton.addEventListener("click", async () => {
@@ -238,6 +247,7 @@ function handleServerEvent(event) {
     return;
   }
   if (payload.message) {
+    recordDisplayedEvent(payload);
     showToast(payload.message);
   }
   const detail = payload.payload || {};
@@ -248,6 +258,50 @@ function handleServerEvent(event) {
     }
   }
   scheduleReloadForEvent(payload);
+}
+
+function recordDisplayedEvent(payload) {
+  state.eventHistory.push({
+    time: new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    type: String(payload.type || ""),
+    message: String(payload.message || ""),
+  });
+  if (state.eventHistory.length > MAX_EVENT_HISTORY) {
+    state.eventHistory.splice(0, state.eventHistory.length - MAX_EVENT_HISTORY);
+  }
+  renderEventHistoryLink();
+}
+
+function renderEventHistoryLink() {
+  if (!eventHistoryLink || !eventHistoryCount) {
+    return;
+  }
+  eventHistoryCount.textContent = String(state.eventHistory.length);
+  eventHistoryLink.disabled = state.eventHistory.length === 0;
+}
+
+function openEventHistory() {
+  const items = state.eventHistory.slice().reverse();
+  const body = items.length
+    ? `<ol class="event-history-list">${items.map(renderEventHistoryItem).join("")}</ol>`
+    : `<p class="subline">За время открытия страницы события не отображались.</p>`;
+  window.lazUI.openModal({
+    id: "event-history-dialog",
+    title: "Отображенные события",
+    body,
+    wide: true,
+  });
+}
+
+function renderEventHistoryItem(item) {
+  const type = item.type ? `<span class="event-history-type">${escapeHTML(item.type)}</span>` : "";
+  return `
+    <li class="event-history-item">
+      <time>${escapeHTML(item.time)}</time>
+      <span>${escapeHTML(item.message)}</span>
+      ${type}
+    </li>
+  `;
 }
 
 function scheduleReloadForEvent(event) {

@@ -17,3 +17,4 @@ backups/
 .env.*
 *.key
 *.pem
+/.tasks/

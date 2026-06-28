@@ -4,6 +4,55 @@ This list tracks practical work that remains after the OSS refactor and initial
 Docker installer tests. Keep this file focused on actionable product,
 deployment, security, and documentation tasks.
 
+## Audit Findings
+
+### P0
+
+- Fail startup in production-like deployments when `LAZ_ADMIN_TOKEN` is left at
+  the default `change-me`; keep any insecure local-development escape hatch
+  explicit and documented.
+- Require a safe `LAZ_SECRET_KEY` policy for production deployments: either
+  mandate a 32-byte base64/hex key or add a real KDF for passphrases instead of
+  deriving AES keys with plain SHA-256.
+- Add explicit rate limits for admin login, client challenge, PIN login,
+  recovery, client creation, subscription, and other public/auth-sensitive
+  endpoints.
+- Rework the client `challenge` flow so it is either clearly documented as a
+  UX confirmation only or replaced with a server-generated nonce with TTL and
+  binding to the client token/session.
+
+### P1
+
+- Consolidate duplicated AES-GCM secret-wrapping code from server storage and
+  node transport into one shared internal package with versioned ciphertext
+  handling and consistent key parsing.
+- Remove runtime `panic` paths from encryption helpers; return and propagate
+  errors instead of crashing the process on random-source failures.
+- Add redaction for remote SSH stderr, agent runtime command output, logs, node
+  URLs, credentials, tokens, and filesystem paths before storing, logging, or
+  returning operational errors.
+- Harden admin same-origin checks so browser login and mutation guards do not
+  silently treat missing `Origin` and `Referer` headers as trusted without an
+  explicit compatibility decision.
+- Restrict LazGate Agent runtime command execution with a documented sudoers
+  allowlist, strict service/path validation, command audit records, and safer
+  rollback reporting.
+
+### P2
+
+- Split the overloaded `transport/http/httpx/responses.go` helpers into focused
+  JSON, error, and QR files; move Amnezia-specific QR framing closer to the
+  subscription/client domain if practical.
+- Document Amnezia QR framing constants such as magic code, chunk size, image
+  size, and quiet zone, including links or notes that justify compatibility
+  values.
+- Add direct HTTP handler tests for admin login CSRF/origin behavior,
+  permission guard decisions, client PIN/recovery failures, QR size limits, and
+  bearer-token versus cookie-session authentication.
+- Consider replacing or further constraining custom token/short-ID helpers with
+  a single well-documented token package and policy tests for entropy, length,
+  encoding, and hash handling.
+
 ## Before First Public Release
 
 - Validate the one-command install flow on a fresh Debian/Ubuntu VPS after every

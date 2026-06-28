@@ -699,7 +699,7 @@ func (s *SQLStore) UpdateConnectionStatus(id string, status model.Status, lastEr
 	return s.GetConnection(id)
 }
 
-func (s *SQLStore) FinalizeConnectionsForAuthSnapshot(nodeID, accountID string, appliedSnapshotVersionMS int64) ([]model.Connection, error) {
+func (s *SQLStore) FinalizeConnectionsForAuthSnapshot(nodeID, accountID string, appliedSnapshotVersionMS int64) ([]model.FinalizedConnection, error) {
 	candidates := []model.Connection{}
 	rows, err := s.query(`select id, account_id, client_id, node_id, protocol, remote_id, remote_name, status, desired_status, last_sync_at, last_error, created_at, updated_at
 from connections
@@ -721,10 +721,11 @@ where node_id = ? and account_id = ? and status in (?, ?, ?, ?)`,
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	finalized := make([]model.Connection, 0, len(candidates))
+	finalized := make([]model.FinalizedConnection, 0, len(candidates))
 	for _, c := range candidates {
+		previousStatus := c.Status
 		next := model.StatusActive
-		switch c.Status {
+		switch previousStatus {
 		case model.StatusPendingCreate, model.StatusPendingResume:
 			next = model.StatusActive
 		case model.StatusPendingHold:
@@ -741,7 +742,7 @@ where node_id = ? and account_id = ? and status in (?, ?, ?, ?)`,
 		if err != nil {
 			return finalized, err
 		}
-		finalized = append(finalized, updated)
+		finalized = append(finalized, model.FinalizedConnection{Connection: updated, PreviousStatus: previousStatus})
 	}
 	return finalized, nil
 }

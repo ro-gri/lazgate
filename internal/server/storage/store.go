@@ -23,7 +23,7 @@ type Store interface {
 	CreateConnection(model.Connection) (model.Connection, error)
 	GetConnection(id string) (model.Connection, error)
 	UpdateConnectionStatus(id string, status model.Status, lastErr string) (model.Connection, error)
-	FinalizeConnectionsForAuthSnapshot(nodeID, accountID string, appliedSnapshotVersionMS int64) ([]model.Connection, error)
+	FinalizeConnectionsForAuthSnapshot(nodeID, accountID string, appliedSnapshotVersionMS int64) ([]model.FinalizedConnection, error)
 	ListConnections() []model.Connection
 
 	CreateIssuedConfig(model.IssuedConfig) (model.IssuedConfig, error)

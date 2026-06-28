@@ -66,6 +66,14 @@ func (s *SQLStore) Close() error {
 	return s.db.Close()
 }
 
+func (s *SQLStore) DB() *sql.DB {
+	return s.db
+}
+
+func (s *SQLStore) Dialect() commonmigrations.Dialect {
+	return s.dialect
+}
+
 func (s *SQLStore) Enqueue(ctx context.Context, msg Message) error {
 	msg.Direction = DirectionOutbound
 	return s.enqueue(ctx, "transport_outbox_messages", msg)
@@ -334,6 +342,10 @@ func scanProcessed(scanner interface{ Scan(...any) error }) (ProcessedMessage, e
 	return msg, err
 }
 
+func EncodeMessageJSON(payload []byte, result []byte) (string, error) {
+	return encodeMessageJSON(messageJSON{Payload: payload, Result: result})
+}
+
 func encodeMessageJSON(value messageJSON) (string, error) {
 	m := map[string]string{}
 	if len(value.Payload) > 0 {
@@ -362,18 +374,26 @@ func mustDecodeMessageJSON(raw string) messageJSON {
 	return out
 }
 
-func timeMS(t time.Time) int64 {
+func TimeMS(t time.Time) int64 {
 	if t.IsZero() {
 		return 0
 	}
 	return t.UTC().UnixMilli()
 }
 
-func timeMSOrNil(t time.Time) any {
+func TimeMSOrNil(t time.Time) any {
 	if t.IsZero() {
 		return nil
 	}
-	return timeMS(t)
+	return TimeMS(t)
+}
+
+func timeMS(t time.Time) int64 {
+	return TimeMS(t)
+}
+
+func timeMSOrNil(t time.Time) any {
+	return TimeMSOrNil(t)
 }
 
 func timeFromMS(ms int64) time.Time {

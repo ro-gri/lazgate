@@ -164,7 +164,7 @@ func (s *SecureStore) GetConnection(id string) (model.Connection, error) {
 func (s *SecureStore) UpdateConnectionStatus(id string, status model.Status, lastErr string) (model.Connection, error) {
 	return s.inner.UpdateConnectionStatus(id, status, lastErr)
 }
-func (s *SecureStore) FinalizeConnectionsForAuthSnapshot(nodeID, accountID string, appliedSnapshotVersionMS int64) ([]model.Connection, error) {
+func (s *SecureStore) FinalizeConnectionsForAuthSnapshot(nodeID, accountID string, appliedSnapshotVersionMS int64) ([]model.FinalizedConnection, error) {
 	return s.inner.FinalizeConnectionsForAuthSnapshot(nodeID, accountID, appliedSnapshotVersionMS)
 }
 func (s *SecureStore) ListConnections() []model.Connection { return s.inner.ListConnections() }

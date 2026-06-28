@@ -48,12 +48,16 @@ func NewServer(st store.Store, adminToken string, publicBaseURL string, webPrefi
 }
 
 func NewServerWithTransport(st store.Store, transport transportstore.Store, adminToken string, publicBaseURL string, webPrefix string) *Server {
+	return NewServerWithTransportEvents(st, transport, st, nil, adminToken, publicBaseURL, webPrefix)
+}
+
+func NewServerWithTransportEvents(st store.Store, transport transportstore.Store, eventStore eventsvc.Store, completer workqueue.Completer, adminToken string, publicBaseURL string, webPrefix string) *Server {
 	connectionService := connections.New(st, commontokens.New)
 	agentControl := agentcontrol.NewHub(st, transport)
-	eventBus := eventsvc.New(st)
+	eventBus := eventsvc.New(eventStore)
 	nodeInstall := provisioningsvc.New(st)
 	connectionService.SetTransport(transport)
-	worker := workqueue.New(transport, eventBus, "server", slog.Default())
+	worker := workqueue.NewWithCompleter(transport, eventBus, completer, "server", slog.Default())
 	worker.Register(workqueue.TypeNodeAuthRefresh, workqueue.AuthRefreshHandler{Store: st, Refresher: agentControl})
 	hysteriaInstallHandler := workqueue.HysteriaInstallHandler{Installer: nodeInstall}
 	for _, typ := range []string{

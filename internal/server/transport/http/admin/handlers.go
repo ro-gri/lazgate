@@ -180,7 +180,7 @@ func (a *App) accountsHandler(w http.ResponseWriter, r *http.Request) {
 			EntityType:  "account",
 			EntityID:    u.ID,
 			Actor:       "admin",
-			Message:     "Аккаунт создан.",
+			Message:     "Аккаунт " + accountLabel(u, u.ID) + " создан.",
 			PayloadJSON: jsonString(map[string]any{"account": adminview.AccountItem(u)}),
 		})
 		httpx.JSON(w, http.StatusCreated, adminview.AccountItem(u))
@@ -317,7 +317,7 @@ func (a *App) enrollments(w http.ResponseWriter, r *http.Request) {
 		EntityType:  "account",
 		EntityID:    enrollment.Account.ID,
 		Actor:       "admin",
-		Message:     "Аккаунт и подключения созданы.",
+		Message:     enrollmentEventMessage(enrollment.Account, enrollment.Client, enrollment.Results, enrollment.Partial),
 		PayloadJSON: jsonString(map[string]any{"account": adminview.AccountItem(enrollment.Account), "client": adminview.ClientItem(enrollment.Client), "partial": enrollment.Partial}),
 	})
 
@@ -673,13 +673,15 @@ func (a *App) clientsHandler(w http.ResponseWriter, r *http.Request) {
 		EntityID:   d.ID,
 		Details:    map[string]any{"account_id": d.AccountID, "slug": d.Slug, "name": d.Name},
 	})
+	accountName := a.accountEventLabel(d.AccountID)
+	clientName := clientLabel(d, d.ID)
 	a.publish(r.Context(), model.Event{
 		Type:        "client.created",
 		EntityType:  "client",
 		EntityID:    d.ID,
 		Actor:       "admin",
-		Message:     "Клиент создан.",
-		PayloadJSON: jsonString(map[string]any{"account_id": d.AccountID, "client": adminview.ClientItem(d)}),
+		Message:     "Клиент " + clientName + " для " + accountName + " создан.",
+		PayloadJSON: jsonString(map[string]any{"account_id": d.AccountID, "account_name": accountName, "client_id": d.ID, "client_name": clientName, "client": adminview.ClientItem(d)}),
 	})
 	httpx.JSON(w, http.StatusCreated, adminview.ClientItem(d))
 }
@@ -723,13 +725,16 @@ func (a *App) connectionsHandler(w http.ResponseWriter, r *http.Request) {
 			EntityID:   connection.ID,
 			Details:    map[string]any{"account_id": connection.AccountID, "client_id": connection.ClientID, "node_id": connection.NodeID, "protocol": connection.Protocol},
 		})
+		accountName := a.accountEventLabel(connection.AccountID)
+		clientName := a.clientEventLabel(connection.AccountID, connection.ClientID)
+		nodeName := a.nodeEventLabel(connection.NodeID)
 		a.publish(r.Context(), model.Event{
 			Type:        "connection.created",
 			EntityType:  "connection",
 			EntityID:    connection.ID,
 			Actor:       "admin",
-			Message:     "Подключение создано.",
-			PayloadJSON: jsonString(map[string]any{"account_id": connection.AccountID, "client_id": connection.ClientID, "connection": adminview.ConnectionItem(connection)}),
+			Message:     "Подключение " + clientName + " для " + accountName + " создано на " + nodeName + ".",
+			PayloadJSON: jsonString(map[string]any{"account_id": connection.AccountID, "account_name": accountName, "client_id": connection.ClientID, "client_name": clientName, "node_id": connection.NodeID, "node_name": nodeName}),
 		})
 		httpx.JSON(w, http.StatusCreated, adminview.ConnectionItem(connection))
 	default:
@@ -1020,6 +1025,84 @@ func (a *App) deletedConnectionsForAccount(w http.ResponseWriter, accountID stri
 	})
 }
 
+func accountLabel(account model.Account, fallback string) string {
+	if label := strings.TrimSpace(account.DisplayName); label != "" {
+		return label
+	}
+	if label := strings.TrimSpace(account.Username); label != "" {
+		return label
+	}
+	return fallback
+}
+
+func clientLabel(client model.Client, fallback string) string {
+	if label := strings.TrimSpace(client.Name); label != "" {
+		return label
+	}
+	if label := strings.TrimSpace(client.Slug); label != "" {
+		return label
+	}
+	return fallback
+}
+
+func nodeLabel(node model.Node, fallback string) string {
+	if label := strings.TrimSpace(node.Name); label != "" {
+		return label
+	}
+	return fallback
+}
+
+func (a *App) accountEventLabel(accountID string) string {
+	account, err := a.store.GetAccount(accountID)
+	if err != nil {
+		return accountID
+	}
+	return accountLabel(account, accountID)
+}
+
+func (a *App) clientEventLabel(accountID, clientID string) string {
+	client, err := a.store.GetClientForAccount(accountID, clientID)
+	if err != nil {
+		return clientID
+	}
+	return clientLabel(client, clientID)
+}
+
+func (a *App) nodeEventLabel(nodeID string) string {
+	node, err := a.store.GetNode(nodeID)
+	if err != nil {
+		return nodeID
+	}
+	return nodeLabel(node, nodeID)
+}
+
+func enrollmentEventMessage(account model.Account, client model.Client, results []accounts.EnrollmentNodeResult, partial bool) string {
+	accountName := accountLabel(account, account.ID)
+	clientName := clientLabel(client, client.ID)
+	nodeNames := make([]string, 0, len(results))
+	for _, item := range results {
+		if item.Err != nil {
+			continue
+		}
+		nodeNames = append(nodeNames, nodeLabel(item.Node, item.Node.ID))
+	}
+	if len(nodeNames) == 0 {
+		if partial {
+			return "Аккаунт " + accountName + " и клиент " + clientName + " созданы, но подключения созданы частично."
+		}
+		return "Аккаунт " + accountName + " и клиент " + clientName + " созданы."
+	}
+	prefix := "Подключения " + clientName + " для " + accountName + " созданы на "
+	if len(nodeNames) == 1 {
+		prefix = "Подключение " + clientName + " для " + accountName + " создано на "
+	}
+	message := prefix + strings.Join(nodeNames, ", ") + "."
+	if partial {
+		message = "Частично: " + message
+	}
+	return message
+}
+
 func (a *App) provisionAccess(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		AccountID      string         `json:"account_id"`
@@ -1091,13 +1174,16 @@ func (a *App) provisionAccess(w http.ResponseWriter, r *http.Request) {
 			EntityID:   result.Connection.ID,
 			Details:    map[string]any{"account_id": result.Connection.AccountID, "client_id": result.Connection.ClientID, "node_id": result.Connection.NodeID, "protocol": result.Connection.Protocol, "config_count": len(result.Configs)},
 		})
+		accountName := a.accountEventLabel(result.Connection.AccountID)
+		clientName := a.clientEventLabel(result.Connection.AccountID, result.Connection.ClientID)
+		nodeName := a.nodeEventLabel(result.Connection.NodeID)
 		a.publish(r.Context(), model.Event{
 			Type:        "connection.created",
 			EntityType:  "connection",
 			EntityID:    result.Connection.ID,
 			Actor:       "admin",
-			Message:     "Подключение создано.",
-			PayloadJSON: jsonString(map[string]any{"account_id": result.Connection.AccountID, "client_id": result.Connection.ClientID, "connection": adminview.ConnectionItem(result.Connection)}),
+			Message:     "Подключение " + clientName + " для " + accountName + " создано на " + nodeName + ".",
+			PayloadJSON: jsonString(map[string]any{"account_id": result.Connection.AccountID, "account_name": accountName, "client_id": result.Connection.ClientID, "client_name": clientName, "node_id": result.Connection.NodeID, "node_name": nodeName}),
 		})
 		httpx.JSON(w, http.StatusCreated, map[string]any{
 			"connection": adminview.ConnectionItem(result.Connection),
@@ -1111,13 +1197,16 @@ func (a *App) provisionAccess(w http.ResponseWriter, r *http.Request) {
 		EntityID:   result.Connection.ID,
 		Details:    map[string]any{"account_id": result.Connection.AccountID, "client_id": result.Connection.ClientID, "node_id": result.Connection.NodeID, "protocol": result.Connection.Protocol, "config_count": len(result.Configs)},
 	})
+	accountName := a.accountEventLabel(result.Connection.AccountID)
+	clientName := a.clientEventLabel(result.Connection.AccountID, result.Connection.ClientID)
+	nodeName := a.nodeEventLabel(result.Connection.NodeID)
 	a.publish(r.Context(), model.Event{
 		Type:        "connection.created",
 		EntityType:  "connection",
 		EntityID:    result.Connection.ID,
 		Actor:       "admin",
-		Message:     "Подключение создано.",
-		PayloadJSON: jsonString(map[string]any{"account_id": result.Connection.AccountID, "client_id": result.Connection.ClientID, "connection": adminview.ConnectionItem(result.Connection)}),
+		Message:     "Подключение " + clientName + " для " + accountName + " создано на " + nodeName + ".",
+		PayloadJSON: jsonString(map[string]any{"account_id": result.Connection.AccountID, "account_name": accountName, "client_id": result.Connection.ClientID, "client_name": clientName, "node_id": result.Connection.NodeID, "node_name": nodeName}),
 	})
 	httpx.JSON(w, http.StatusCreated, map[string]any{
 		"connection": adminview.ConnectionItem(result.Connection),

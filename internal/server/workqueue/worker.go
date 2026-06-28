@@ -32,19 +32,28 @@ type EventSink interface {
 	Publish(context.Context, model.Event) model.Event
 }
 
+type Completer interface {
+	Complete(context.Context, transportstore.Message, Result) error
+}
+
 type Worker struct {
-	store    transportstore.Store
-	events   EventSink
-	actorID  string
-	handlers map[string]Handler
-	logger   *slog.Logger
+	store     transportstore.Store
+	events    EventSink
+	completer Completer
+	actorID   string
+	handlers  map[string]Handler
+	logger    *slog.Logger
 }
 
 func New(store transportstore.Store, events EventSink, actorID string, logger *slog.Logger) *Worker {
+	return NewWithCompleter(store, events, nil, actorID, logger)
+}
+
+func NewWithCompleter(store transportstore.Store, events EventSink, completer Completer, actorID string, logger *slog.Logger) *Worker {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Worker{store: store, events: events, actorID: actorID, handlers: map[string]Handler{}, logger: logger}
+	return &Worker{store: store, events: events, completer: completer, actorID: actorID, handlers: map[string]Handler{}, logger: logger}
 }
 
 func (w *Worker) Register(typ string, handler Handler) {
@@ -88,19 +97,36 @@ func (w *Worker) handle(ctx context.Context, msg transportstore.Message) {
 		if retryAt.IsZero() {
 			retryAt = time.Now().UTC().Add(10 * time.Second)
 		}
+		if w.completer != nil {
+			result.Status = transportstore.StatusFailed
+			result.RetryAt = retryAt
+			result.Output = []byte(err.Error())
+			if completeErr := w.completer.Complete(ctx, msg, result); completeErr != nil {
+				_ = w.store.MarkFailed(ctx, msg.ID, completeErr.Error(), time.Now().UTC().Add(10*time.Second))
+			}
+			return
+		}
 		_ = w.store.MarkFailed(ctx, msg.ID, err.Error(), retryAt)
 		return
 	}
+	for i := range result.Next {
+		if result.Next[i].ActorID == "" {
+			result.Next[i].ActorID = w.actorID
+		}
+		if result.Next[i].Status == "" {
+			result.Next[i].Status = transportstore.StatusPending
+		}
+		if result.Next[i].AvailableAt.IsZero() {
+			result.Next[i].AvailableAt = time.Now().UTC()
+		}
+	}
+	if w.completer != nil {
+		if err := w.completer.Complete(ctx, msg, result); err != nil {
+			_ = w.store.MarkFailed(ctx, msg.ID, err.Error(), time.Now().UTC().Add(10*time.Second))
+		}
+		return
+	}
 	for _, next := range result.Next {
-		if next.ActorID == "" {
-			next.ActorID = w.actorID
-		}
-		if next.Status == "" {
-			next.Status = transportstore.StatusPending
-		}
-		if next.AvailableAt.IsZero() {
-			next.AvailableAt = time.Now().UTC()
-		}
 		if err := w.store.Enqueue(ctx, next); err != nil {
 			_ = w.store.MarkFailed(ctx, msg.ID, err.Error(), time.Now().UTC().Add(10*time.Second))
 			return

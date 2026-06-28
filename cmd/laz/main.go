@@ -18,6 +18,7 @@ import (
 	"laz/internal/server"
 	"laz/internal/server/config"
 	"laz/internal/server/storage"
+	"laz/internal/server/transportdb"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -39,17 +40,21 @@ func main() {
 	if err != nil {
 		log.Fatalf("open store: %v", err)
 	}
-	transport, err := openTransportStore(cfg)
+	transportSQL, err := openTransportStore(cfg)
 	if err != nil {
 		log.Fatalf("open transport store: %v", err)
 	}
-	transport, err = transportstore.WrapSecrets(transport, cfg.SecretKey)
+	eventStore, err := transportdb.New(transportSQL, cfg.SecretKey)
+	if err != nil {
+		log.Fatalf("open server transport store: %v", err)
+	}
+	transport, err := transportstore.WrapSecrets(transportSQL, cfg.SecretKey)
 	if err != nil {
 		log.Fatalf("wrap transport secrets: %v", err)
 	}
 	defer transport.Close()
 
-	srv := server.NewServerWithTransport(st, transport, cfg.AdminToken, cfg.PublicBaseURL, cfg.WebPrefix)
+	srv := server.NewServerWithTransportEvents(st, transport, eventStore, eventStore, cfg.AdminToken, cfg.PublicBaseURL, cfg.WebPrefix)
 	srv.SetAdminAuth(cfg.AdminToken, cfg.AdminTokenSHA256)
 	srv.SetAppName(cfg.Name)
 	if cfg.AgentGRPCCertFile != "" {
@@ -74,6 +79,7 @@ func main() {
 	defer stop()
 	srv.RunWorkers(ctx)
 	go cleanupTransport(ctx, transport)
+	go cleanupServerEvents(ctx, eventStore)
 
 	log.Printf("laz listening on %s", cfg.Addr)
 	if err := http.ListenAndServe(cfg.Addr, srv.Routes()); err != nil {
@@ -94,7 +100,20 @@ func cleanupTransport(ctx context.Context, transport transportstore.Store) {
 	}
 }
 
-func openTransportStore(cfg config.Config) (transportstore.Store, error) {
+func cleanupServerEvents(ctx context.Context, events *transportdb.Store) {
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	for {
+		_ = events.Cleanup(ctx, transportdb.DefaultCleanupPolicy())
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func openTransportStore(cfg config.Config) (*transportstore.SQLStore, error) {
 	switch cfg.Storage {
 	case "postgres", "postgresql":
 		databaseURL := cfg.TransportDatabaseURL

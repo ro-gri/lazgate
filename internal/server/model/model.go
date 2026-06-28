@@ -85,6 +85,11 @@ type Node struct {
 	UpdatedAt  time.Time
 }
 
+type FinalizedConnection struct {
+	Connection     Connection
+	PreviousStatus Status
+}
+
 type Connection struct {
 	ID            string
 	AccountID     string
